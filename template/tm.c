@@ -25,39 +25,44 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 
 // Internal headers
 #include <tm.h>
+#include "hashmap.h"
 
 #include "macros.h"
 
 static const tx_t read_only_tx  = UINTPTR_MAX - 10;
 static const tx_t read_write_tx = UINTPTR_MAX - 11;
 
-enum type {READ,WRITE};
-
-struct version_clock_struct {
-    u_int64_t version;
-    bool locked;
-};
-typedef struct version_clock_struct* version_clock;
-
-typedef struct read_node read_node;
-
 struct read_node {
-    void* address;
+    void* word;
     read_node* prev;
     read_node* next;
+    u_int64_t rv;
 };
+typedef struct read_node* read_list;
 
-typedef struct write_node write_node;
+typedef struct {
+    void* target;
+    void* src;
+    u_int64_t rv, wv;
+} write_node;
 
-struct write_node {
-    void* address;
-    void* value;
-    write_node* prev;
-    write_node* next;
-};
+int compare(const void *a, const void *b, void *udata) {
+    const write_node *wa = a, *wb = b;
+    if (wa->src > wb->src) {
+        return 1;
+    } else if (wa->src < wb->src) {
+        return -1;
+    }
+    return 0;
+}
+uint64_t hash(const void *item, uint64_t seed0, uint64_t seed1) {
+    const write_node *node = item;
+    return hashmap_sip(user->src, sizeof(void*), seed0, seed1);
+}
 
 /**
  * @brief List of dynamically allocated segments.
@@ -65,22 +70,30 @@ struct write_node {
 struct segment_node {
     struct segment_node* prev;
     struct segment_node* next;
-    u_int64_t rv;
-    read_node* r_head;
-    write_node* w_head;
+    size_t size;
+    void* address;
+    bool* locks;
 };
 typedef struct segment_node* segment_list;
+
+struct transaction_struct{
+    u_int64_t rv, wv;
+    read_node* r_head;
+    struct hashmap* write_set;
+    bool ro;
+};
+typedef struct transaction_struct* transaction;
 
 /**
  * @brief Simple Shared Memory Region (a.k.a Transactional Memory).
  */
-struct region {
+typedef struct {
     void* start;        // Start of the shared memory region (i.e., of the non-deallocable memory segment)
     segment_list segments; // Shared memory segments dynamically allocated via tm_alloc within transactions
     size_t size;        // Size of the non-deallocable memory segment (in bytes)
     size_t align;       // Size of a word in the shared memory region (in bytes)
-    version_clock global_version;
-};
+    atomic_int clock;
+} region;
 
 static inline bool c&s(void* ptr, bool old, bool new) {
     return __sync_val_compare_and_swap(ptr, old, new);
@@ -90,35 +103,22 @@ static inline segment_list segment_create(segment_list prev, segment_list next) 
     segment_list segment = (segment_list) malloc(sizeof(struct struct segment_node));
     segment->prev = prev;
     segment->next = next;
-    segment->rv = 0;
-    segment->r_head = NULL;
-    segment->w_head = NULL;
     return segment;
 }
 
 static inline void r_set_destroy(read_node* node) {
     while (node) {
         read_node* tmp = node;
-        free(tmp);
         node = node->next;
-    }
-}
-
-static inline void w_set_destroy(write_node* node) {
-    while (node) {
-        write_node* tmp = node;
         free(tmp);
-        node = node->next;
     }
 }
 
 static inline void segments_destroy(segment_list segment) {
     while (segment) {
-        w_set_destroy(segment->w_head);
-        r_set_destroy(segment->r_head);
         segment_list tmp = segment;
-        free(tmp);
         segment = segment->next;
+        free(tmp);
     }
 }
 
@@ -136,7 +136,7 @@ static inline bool global_version_clock_release(bool* lock) {
  * @return Opaque shared memory region handle, 'invalid_shared' on failure
 **/
 shared_t tm_create(size_t size, size_t align) {
-    struct region* region = (struct region*) malloc(sizeof(struct region));
+    region* region = (region*) malloc(sizeof(region));
     if (unlikely(!region)) {
         return invalid_shared;
     }
@@ -150,12 +150,8 @@ shared_t tm_create(size_t size, size_t align) {
     region->segments    = NULL;
     region->size        = size;
     region->align       = align;
-    region->global_version = (version_clock) malloc(sizeof(struct version_clock_struct));
-    if (unlikely(!region->global_version)) {
-        return invalid_shared;
-    }
-    region->global_version->locked = false;
-    region->global_version->version = 0;
+    region->clock       = 0;
+
     return region;
 }
 
@@ -163,7 +159,7 @@ shared_t tm_create(size_t size, size_t align) {
  * @param shared Shared memory region to destroy, with no running transaction
 **/
 void tm_destroy(shared_t shared) {
-    struct region* region = (struct region*) shared;
+    region* region = (region*) shared;
     segments_destroy(region->segments);
     free(region->start);
     free(region->global_version);
@@ -175,7 +171,7 @@ void tm_destroy(shared_t shared) {
  * @return Start address of the first allocated segment
 **/
 void* tm_start(shared_t shared) {
-    return ((struct region*) shared)->start;
+    return ((region*) shared)->start;
 }
 
 /** [thread-safe] Return the size (in bytes) of the first allocated segment of the shared memory region.
@@ -183,7 +179,7 @@ void* tm_start(shared_t shared) {
  * @return First allocated segment size
 **/
 size_t tm_size(shared_t shared) {
-    return ((struct region*) shared)->size;
+    return ((region*) shared)->size;
 }
 
 /** [thread-safe] Return the alignment (in bytes) of the memory accesses on the given shared memory region.
@@ -191,7 +187,7 @@ size_t tm_size(shared_t shared) {
  * @return Alignment used globally
 **/
 size_t tm_align(shared_t shared) {
-    return ((struct region*) shared)->align;
+    return ((region*) shared)->align;
 }
 
 /** [thread-safe] Begin a new transaction on the given shared memory region.
@@ -199,9 +195,18 @@ size_t tm_align(shared_t shared) {
  * @param is_ro  Whether the transaction is read-only
  * @return Opaque transaction ID, 'invalid_tx' on failure
 **/
-tx_t tm_begin(shared_t unused(shared), bool unused(is_ro)) {
-    // TODO: tm_begin(shared_t)
-    return invalid_tx;
+tx_t tm_begin(shared_t shared, is_ro) {
+    transaction tx = (transaction) malloc(sizeof(struct transaction_struct));
+    if (unlikely(!tx)) {
+        return invalid_shared;
+    }
+    tx->address = NULL;
+    tx->rv = ((region*) shared)->clock;
+    tx->wv = 0;
+    tx->ro = is_ro;
+    tx->r_head = NULL;
+    tx->w_head = hashmap_new(sizeof(write_node), 0, 0, 0, hash, compare, NULL, NULL);
+    return tx;
 }
 
 /** [thread-safe] End the given transaction.
@@ -209,8 +214,8 @@ tx_t tm_begin(shared_t unused(shared), bool unused(is_ro)) {
  * @param tx     Transaction to end
  * @return Whether the whole transaction committed
 **/
-bool tm_end(shared_t unused(shared), tx_t unused(tx)) {
-    // TODO: tm_end(shared_t, tx_t)
+bool tm_end(shared_t shared, tx_t tx) {
+
     return false;
 }
 
@@ -222,8 +227,21 @@ bool tm_end(shared_t unused(shared), tx_t unused(tx)) {
  * @param target Target start address (in a private region)
  * @return Whether the whole transaction can continue
 **/
-bool tm_read(shared_t unused(shared), tx_t unused(tx), void const* unused(source), size_t unused(size), void* unused(target)) {
-    // TODO: tm_read(shared_t, tx_t, void const*, size_t, void*)
+bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* target) {
+
+    region* region = (region*) shared;
+    for (size_t word = 0; word < size / region->align; word++) {
+        void* source_word_ptr = source + word * region->align;
+        void* target_word_ptr = target + word * region->align;
+
+        write_node* search = hashmap_get(tx->write_set, &(write_node){ .target=source_word_ptr });
+        if (search) {
+            memcpy(target_word_ptr, source_word_ptr, region->align);
+            continue;
+        }
+
+    }
+
     return false;
 }
 
@@ -235,8 +253,8 @@ bool tm_read(shared_t unused(shared), tx_t unused(tx), void const* unused(source
  * @param target Target start address (in the shared region)
  * @return Whether the whole transaction can continue
 **/
-bool tm_write(shared_t unused(shared), tx_t unused(tx), void const* unused(source), size_t unused(size), void* unused(target)) {
-    // TODO: tm_write(shared_t, tx_t, void const*, size_t, void*)
+bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* target) {
+
     return false;
 }
 
