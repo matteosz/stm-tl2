@@ -1,4 +1,4 @@
-#include <stdbool.h>
+#pragma once
 
 /** Define a proposition as likely true.
  * @param prop Proposition
@@ -34,3 +34,7 @@
     #define unused(variable)
     #warning This compiler has no support for GCC attributes
 #endif
+
+uint64_t reference = 1;
+uint16_t m = 1000, n = 2000;
+uint8_t bitShift = 32, bitMask = 63;
