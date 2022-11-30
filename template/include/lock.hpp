@@ -8,13 +8,12 @@ class Lock {
             public:
                 uint64_t versionNumber, versionLock;
                 bool lock;
-                Version(uint64_t,uint64_t,bool);
+                Version(uint64_t,uint64_t,uint64_t);
         };
 
-        std::atomic_uint64_t version;
+        ::std::atomic_uint64_t version;
 
         Lock();
-        Lock(Lock*);
 
         bool acquire();
         bool release();

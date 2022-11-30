@@ -43,6 +43,7 @@ size_t tm_align(shared_t shared) {
 }
 
 tx_t tm_begin(shared_t shared, bool is_ro) {
+    // Sample the global clock
     tr.setClock((Region*) shared);
     tr.setRo(is_ro);
     return (tx_t) &tr;
@@ -55,7 +56,7 @@ bool tm_end(shared_t shared, tx_t unused(tx)) {
         tr.clear();
         return true;
     }
-    tr.setWVersion(region->incrementClock());
+    tr.setWVersion(region->fetchAndIncClock());
     if ((tr.rVersion != tr.wVersion - 1) && !tr.validate(region)) {
         tr.release(region, count);
         tr.clear();
@@ -75,6 +76,7 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
 
         if (!tr.rOnly) {
             auto search = tr.search(sourceWord);
+            // Already present in the write set
             if (search != tr.wEnd()) {
                 memcpy(targetWord, search->second, region->align);
                 continue;
@@ -82,10 +84,13 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         }
 
         Word *word = region->getWord(sourceWord);
-        Lock::Version before = word->sampleLock();
+        ::Lock::Version before = word->sampleLock();
         memcpy(targetWord, &word->value, region->align);
-        Lock::Version after = word->sampleLock();
 
+        // Sample the lock again to check if a concurrent transaction has occurred
+        ::Lock::Version after = word->sampleLock();
+
+        // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
         if (after.lock || before.versionNumber != after.versionNumber || before.versionNumber > tr.rVersion) {
             tr.clear();
             return false;
@@ -106,7 +111,11 @@ bool tm_write(shared_t shared, tx_t unused(tx), void const* source, size_t size,
     for (size_t wordNum = 0; wordNum < size / region->align; wordNum++) {
         void *sourceWord = (void*) ((tx_t) source + wordNum * region->align), *cp = malloc(region->align);
         tx_t targetWord = dst + wordNum * region->align;
+
+        // Copy the content of the source to a temporary memory region
         memcpy(cp, sourceWord, region->align);
+
+        // Insert that address into the writeSet
         tr.insertWriteSet(targetWord, cp);
     }
 
@@ -114,7 +123,7 @@ bool tm_write(shared_t shared, tx_t unused(tx), void const* source, size_t size,
 }
 
 Alloc tm_alloc(shared_t shared, tx_t unused(tx), size_t unused(size), void** target) {
-    *target = (void*) (((Region*) shared)->incrementSegments() << bitShift);
+    *target = (void*) (((Region*) shared)->fetchAndIncSegments() << smallShift);
     return Alloc::success;
 }
 
