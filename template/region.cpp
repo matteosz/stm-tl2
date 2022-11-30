@@ -11,8 +11,8 @@ uint64_t Region::sampleClock() {
     return globalClock.load();
 }
 
-Word *Region::getWord(tx_t address) {
-    return &(matrix[getRow(address)][getCol(address)]);
+Word &Region::getWord(tx_t address) {
+    return matrix[getRow(address)][getCol(address)];
 }
 
 uint64_t Region::fetchAndIncSegments() {

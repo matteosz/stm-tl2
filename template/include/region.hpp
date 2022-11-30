@@ -17,7 +17,7 @@ class Region {
         Region(size_t,size_t);
 
         uint64_t sampleClock();
-        Word *getWord(tx_t);
+        Word &getWord(tx_t);
         uint64_t fetchAndIncSegments();
         uint64_t fetchAndIncClock();
 
