@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lock.hpp"
+#include <lock.hpp>
 #include <cstdint>
 
 class Word {
@@ -8,7 +8,7 @@ class Word {
         uint64_t value;
         Lock lock;
         
-        Word();
+        Word(uint64_t);
         Lock::Version sampleLock();
         bool acquire();
         void release();

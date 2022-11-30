@@ -2,7 +2,6 @@
  * @file   tm.cpp
  * @author Matteo Suez
  * @section DESCRIPTION
- *
  * Implementation of my transaction manager based on TL2.
 **/
 
@@ -13,10 +12,10 @@
 #endif
 
 // Internal headers
-#include "tm.hpp"
-#include "transaction.hpp"
+#include <tm.hpp>
+#include <transaction.hpp>
 
-static thread_local Transaction tr;
+static thread_local Transaction tr(false);
 
 shared_t tm_create(size_t size, size_t align) {
     Region *region = new Region(size, align);

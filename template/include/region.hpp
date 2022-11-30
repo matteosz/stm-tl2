@@ -2,9 +2,9 @@
 
 #include <vector>
 #include <atomic>
-#include "tm.hpp"
-#include "macros.hpp"
-#include "word.hpp"
+#include <tm.hpp>
+#include <macros.hpp>
+#include <word.hpp>
 
 using namespace std;
 
@@ -17,7 +17,7 @@ class Region {
         Region(size_t,size_t);
 
         uint64_t sampleClock();
-        Word &getWord(tx_t);
+        Word *getWord(tx_t);
         uint64_t fetchAndIncSegments();
         uint64_t fetchAndIncClock();
 
