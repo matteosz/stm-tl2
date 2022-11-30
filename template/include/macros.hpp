@@ -39,6 +39,7 @@
 
 
 uint16_t m = 1000, n = 2000;
+
 uint8_t bigShift = 63, smallShift = 32;
 
 // 0111...111

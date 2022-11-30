@@ -1,18 +1,20 @@
 #pragma once
 
 #include <cstdint>
-#include <set>
+#include <unordered_set>
 #include <unordered_map>
-#include "tm.hpp"
-#include "region.hpp"
+#include <tm.hpp>
+#include <region.hpp>
 
 class Transaction {
     public: 
         uint64_t rVersion, wVersion;
-        set<void*> rSet;
+        unordered_set<void*> rSet;
         unordered_map<tx_t,void*> wSet;
         bool rOnly;
         
+        Transaction(bool);
+
         void setRo(bool);
         void setClock(Region*);
         unordered_map<tx_t,void*>::iterator search(tx_t);

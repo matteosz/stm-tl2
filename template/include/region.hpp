@@ -2,9 +2,9 @@
 
 #include <vector>
 #include <atomic>
-#include "tm.hpp"
-#include "macros.hpp"
-#include "word.hpp"
+#include <tm.hpp>
+#include <macros.hpp>
+#include <word.hpp>
 
 using namespace std;
 

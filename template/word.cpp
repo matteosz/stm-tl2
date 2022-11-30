@@ -1,6 +1,6 @@
-#include "word.hpp"
+#include <word.hpp>
 
-Word::Word() : value(0) {}
+Word::Word(uint64_t _value) : value(_value) {}
 
 Lock::Version Word::sampleLock() {
     return lock.sampleLock();
