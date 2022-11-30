@@ -7,7 +7,7 @@
 #include <cstring>
 
 #include "macros.hpp"
-#include "../include/tm.hpp"
+#include "../../include/tm.hpp"
 
 class Version {
     public:
