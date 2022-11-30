@@ -1,12 +1,30 @@
 #include <region.hpp>
 
+Word::Word() : value(0) {}
+
+Version Word::sampleLock() {
+    return lock.sampleLock();
+}
+
+bool Word::acquire() {
+    return lock.acquire();
+}
+
+void Word::release() {
+    lock.release();
+}
+
+bool Word::setVersion(uint64_t newVersion) {
+    return lock.setVersion(newVersion);
+}
+
 Region::Region(size_t _size, size_t _align) : 
-        start(startAddress), 
+        start((void*) (reference << smallShift)), 
         size(_size), 
         align(_align), 
-        nextSegment(2),
+        matrix(m, vector<Word>(n)),
         globalClock(0), 
-        matrix(m, vector<Word>(n, Word(0))) {}
+        nextSegment(2) {}
 
 uint64_t Region::sampleClock() {
     return globalClock.load();

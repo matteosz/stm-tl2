@@ -38,11 +38,9 @@
 #endif
 
 
-uint16_t m = 1000, n = 2000;
+constexpr uint16_t m = 1000, n = 2000;
 
-uint8_t bigShift = 63, smallShift = 32;
+constexpr uint8_t bigShift = 63, smallShift = 32;
 
 // 0111...111
-uint64_t reference = 1, bitMask = (reference << bigShift) - reference;
-
-void *startAddress = (void*) (reference << smallShift);
+constexpr uint64_t reference = 1, bitMask = (reference << bigShift) - reference;

@@ -1,12 +1,21 @@
 #pragma once
 
-#include <vector>
-#include <atomic>
-#include <tm.hpp>
-#include <macros.hpp>
-#include <word.hpp>
+#include <lock.hpp>
 
 using namespace std;
+
+class Word {
+    public:
+        uint64_t value;
+        Lock lock;
+
+        Word();
+
+        Version sampleLock();
+        bool acquire();
+        void release();
+        bool setVersion(uint64_t);
+};
 
 class Region {
     public:
@@ -26,3 +35,4 @@ class Region {
         uint16_t getRow(tx_t);
         uint16_t getCol(tx_t);
 };
+

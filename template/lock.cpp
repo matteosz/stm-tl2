@@ -1,11 +1,10 @@
 #include <lock.hpp>
 
-#include <cstdint>
-#include <macros.hpp>
-
-Lock::Version::Version(uint64_t _versionNumber, uint64_t _versionLock, uint64_t _lock) : 
+Version::Version(uint64_t _versionNumber, uint64_t _versionLock, uint64_t _lock) : 
                 versionNumber(_versionNumber), versionLock(_versionLock), lock(_lock == reference) {}
+                
 Lock::Lock() : version(0) {}
+Lock::Lock(const Lock &_lock) : version(_lock.version.load()) {}
 
 bool Lock::acquire() {
     uint64_t _version = version.load(),
@@ -44,7 +43,7 @@ bool Lock::setVersion(uint64_t newVersion) {
     return compareAndSwap(false, newVersion, oldVersion);
 }
 
-Lock::Version Lock::sampleLock() {
+Version Lock::sampleLock() {
     uint64_t _version = version.load();
     return Version(bitMask & _version, 
                     _version, 
