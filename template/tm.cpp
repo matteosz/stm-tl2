@@ -1,12 +1,10 @@
 /**
- * @file   tm.c
+ * @file   tm.cpp
  * @author Matteo Suez
  * @section DESCRIPTION
  *
  * Implementation of my transaction manager based on TL2.
 **/
-
-#pragma once
 
 // Requested features
 #define _GNU_SOURCE
@@ -14,55 +12,11 @@
     #error Current C11 compiler does not support atomic operations
 #endif
 
-using namespace std;
-
-// External headers
-#include <atomic>
-#include <vector>
-
 // Internal headers
 #include "tm.hpp"
-#include "macros.hpp"
 #include "transaction.hpp"
-#include "word.hpp"
 
 static thread_local Transaction tr;
-
-class Region {
-    public:
-        void *start;
-        size_t size, align;
-        atomic_uint64_t globalClock, nextSegment;
-        vector<vector<Word>> matrix;
-
-        Region(size_t size, size_t align) : 
-            start((void*) (reference << bitShift)), 
-            size(size), 
-            align(align), 
-            nextSegment(2), 
-            matrix(m, vector<Word>(n)) {}
-
-        uint64_t sampleClock() {
-            return this->globalClock.load();
-        }
-        Word* getWord(tx_t address) {
-            return &(this->matrix[getRow(address)][getCol(address)]);
-        }
-        uint64_t incrementSegments() {
-            return this->nextSegment.fetch_add(1);
-        }
-        uint64_t incrementClock() {
-            return this->globalClock.fetch_add(1);
-        }
-
-    private:
-        uint16_t getRow(tx_t address) {
-            return address >> bitShift;
-        }
-        uint16_t getCol(tx_t address) {
-            return ((address << bitShift) >> bitShift) / this->align;
-        }
-};
 
 shared_t tm_create(size_t size, size_t align) {
     Region *region = new Region(size, align);
@@ -96,7 +50,7 @@ tx_t tm_begin(shared_t shared, bool is_ro) {
 
 bool tm_end(shared_t shared, tx_t unused(tx)) {
     Region *region = (Region*) shared;
-    int count = 0;
+    uint32_t count = 0;
     if (tr.rOnly || tr.isEmpty() || tr.acquire(region, &count)) {
         tr.clear();
         return true;

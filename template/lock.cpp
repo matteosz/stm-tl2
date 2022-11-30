@@ -1,5 +1,8 @@
 #include "lock.hpp"
 
+#include <cstdint>
+#include "macros.hpp"
+
 Lock::Version::Version(uint64_t versionNumber, uint64_t versionLock, bool lock) : 
                 versionNumber(versionNumber), versionLock(versionLock), lock(lock) {}
 Lock::Lock() : version(0) {}
@@ -48,10 +51,10 @@ Lock::Version Lock::sampleLock() {
 }
 
 bool Lock::compareAndSwap(bool lock, uint64_t newValue, uint64_t oldValue) {
-    return this->version.compare_exchange_strong(oldValue, bloomFilter(lock, newValue));
+    return this->version.compare_exchange_strong(oldValue, getVersion(lock, newValue));
 }
 
-uint64_t Lock::bloomFilter(bool lock, uint64_t newValue) {
+uint64_t Lock::getVersion(bool lock, uint64_t newValue) {
     if (lock) {
         return (reference << bitMask) | newValue;
     }

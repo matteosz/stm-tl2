@@ -1,9 +1,6 @@
 #pragma once
-#include "macros.hpp"
-#include <atomic>
-#include <cstdint>
 
-using namespace std;
+#include <atomic>
 
 class Lock {
     public:
@@ -14,7 +11,7 @@ class Lock {
                 Version(uint64_t,uint64_t,bool);
         };
 
-        atomic_uint64_t version;
+        std::atomic_uint64_t version;
 
         Lock();
         Lock(Lock*);
@@ -26,5 +23,5 @@ class Lock {
 
     private:
         bool compareAndSwap(bool,uint64_t,uint64_t);
-        uint64_t bloomFilter(bool,uint64_t);
+        uint64_t getVersion(bool,uint64_t);
 };

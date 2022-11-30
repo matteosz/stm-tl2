@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lock.hpp"
+#include <cstdint>
 
 class Word {
     public:

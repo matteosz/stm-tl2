@@ -1,22 +1,22 @@
 #pragma once
 
+#include <cstdint>
 #include <set>
 #include <unordered_map>
-#include "tm.cpp"
-
-using namespace std;
+#include "tm.hpp"
+#include "region.hpp"
 
 class Transaction {
     public: 
         uint64_t rVersion, wVersion;
         set<void*> rSet;
-        unordered_map<tx_t, void*> wSet;
+        unordered_map<tx_t,void*> wSet;
         bool rOnly;
         
         void setRo(bool);
         void setClock(Region*);
-        unordered_map<tx_t, void*>::iterator search(tx_t);
-        unordered_map<tx_t, void*>::iterator wEnd();
+        unordered_map<tx_t,void*>::iterator search(tx_t);
+        unordered_map<tx_t,void*>::iterator wEnd();
         void insertReadSet(tx_t);
         void insertWriteSet(tx_t,void*);
         bool isEmpty();

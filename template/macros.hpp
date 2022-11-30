@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 /** Define a proposition as likely true.
  * @param prop Proposition
 **/
