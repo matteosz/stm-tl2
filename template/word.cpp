@@ -3,17 +3,17 @@
 Word::Word() : value(0) {}
 
 Lock::Version Word::sampleLock() {
-    return this->lock.sampleLock();
+    return lock.sampleLock();
 }
 
 bool Word::acquire() {
-    return this->lock.acquire();
+    return lock.acquire();
 }
 
 void Word::release() {
-    this->lock.release();
+    lock.release();
 }
 
 bool Word::setVersion(uint64_t newVersion) {
-    return this->lock.setVersion(newVersion);
+    return lock.setVersion(newVersion);
 }

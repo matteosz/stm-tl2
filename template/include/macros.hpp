@@ -37,6 +37,11 @@
     #warning This compiler has no support for GCC attributes
 #endif
 
-uint64_t reference = 1;
+
 uint16_t m = 1000, n = 2000;
-uint8_t bitShift = 32, bitMask = 63;
+uint8_t bigShift = 63, smallShift = 32;
+
+// 0111...111
+uint64_t reference = 1, bitMask = (reference << bigShift) - reference;
+
+void *startAddress = (void*) (reference << smallShift);
