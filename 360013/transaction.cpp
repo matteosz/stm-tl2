@@ -34,6 +34,7 @@ bool Transaction::isEmpty() {
 }
 
 bool Transaction::acquire(Region *region, uint32_t *count) {
+    *count = 0;
     for (const auto &target : wSet) {
         Word &word = region->getWord(target.first);
         if (!word.acquire()) {
@@ -45,8 +46,8 @@ bool Transaction::acquire(Region *region, uint32_t *count) {
     return true;
 }
 
-void Transaction::setWVersion(uint64_t newVersion) {
-    wVersion = newVersion + 1;
+void Transaction::setWVersion(Region *region) {
+    wVersion = region->fetchAndIncClock() + 1;
 }
 
 void Transaction::clear() {
@@ -66,9 +67,10 @@ void Transaction::release(Region *region, uint32_t count) {
     for (const auto &target : wSet) {
         Word &word = region->getWord(target.first);
         word.release();
-        if (count-- < 2) {
+        if (count < 2) {
             break;
         }
+        --count;
     }
 }
 
@@ -76,7 +78,7 @@ bool Transaction::validate(Region *region) {
     for (const auto address : rSet) {
         Word &word = region->getWord((uintptr_t) address);
         Version version = word.sampleLock();
-        if ((version.lock) || (version.versionNumber > rVersion)) {
+        if (version.lock || (version.versionNumber > rVersion)) {
             return false;
         }
     }
