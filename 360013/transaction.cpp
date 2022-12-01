@@ -2,11 +2,8 @@
 
 Transaction::Transaction(bool ro) : rOnly(ro) {}
 
-void Transaction::setClock(Region *region) {
+void Transaction::begin(Region *region, bool _rOnly) {
     rVersion = region->sampleClock();
-}
-
-void Transaction::setRo(bool _rOnly) {
     rOnly = _rOnly;
 }
 
@@ -43,7 +40,7 @@ bool Transaction::acquire(Region *region, uint32_t *count) {
             release(region, *count);
             return false;
         }
-        (*count)++;
+        ++*count;
     }
     return true;
 }
@@ -53,16 +50,13 @@ void Transaction::setWVersion(uint64_t newVersion) {
 }
 
 void Transaction::clear() {
-    for (auto &address : rSet) {
-        free(address);
-    }
-    for (auto &address : wSet) {
+    for (const auto &address : wSet) {
         free(address.second);
     }
-    this->rSet.clear();
-    this->wSet.clear();
-    this->rVersion = 0;
-    this->rOnly = false;
+    rSet.clear();
+    wSet.clear();
+    rVersion = 0;
+    rOnly = false;
 }
 
 void Transaction::release(Region *region, uint32_t count) {
@@ -82,7 +76,7 @@ bool Transaction::validate(Region *region) {
     for (const auto address : rSet) {
         Word &word = region->getWord((uintptr_t) address);
         Version version = word.sampleLock();
-        if (version.lock || version.versionNumber > rVersion) {
+        if ((version.lock) || (version.versionNumber > rVersion)) {
             return false;
         }
     }
@@ -90,7 +84,7 @@ bool Transaction::validate(Region *region) {
 }
 
 bool Transaction::commit(Region *region) {
-    for (const auto &target : wSet) {
+    for (const auto target : wSet) {
         Word &word = region->getWord(target.first);
         memcpy(&word.value, target.second, region->align);
         if (!word.setVersion(wVersion)) {

@@ -10,9 +10,8 @@ class Transaction {
         bool rOnly;
         
         Transaction(bool);
-
-        void setRo(bool);
-        void setClock(Region*);
+        
+        void begin(Region*,bool);
         bool search(tx_t,void*,size_t);
         void insertReadSet(tx_t);
         void insertWriteSet(tx_t,void*);

@@ -34,18 +34,18 @@ Word &Region::getWord(tx_t address) {
     return matrix[getRow(address)][getCol(address)];
 }
 
-uint64_t Region::fetchAndIncSegments() {
-    return nextSegment.fetch_add(1);
+void *Region::getAddress() {
+    return (void*) (nextSegment.fetch_add(1) << shift);
 }
 
 uint64_t Region::fetchAndIncClock() {
     return globalClock.fetch_add(1);
 }
 
-uint16_t Region::getRow(tx_t address) {
+uint64_t Region::getRow(tx_t address) {
     return address >> shift;
 }
 
-uint16_t Region::getCol(tx_t address) {
+uint64_t Region::getCol(tx_t address) {
     return ((address << shift) >> shift) / align;
 }

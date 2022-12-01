@@ -14,7 +14,7 @@ bool Lock::acquire() {
     /** The lock is represented by the first bit of the version
      *  1 -> taken, 0 -> not taken already
      */
-    if (_version >> longShift) {
+    if ((_version >> longShift) == 1) {
         return false;
     }
 
@@ -26,8 +26,8 @@ bool Lock::release() {
     uint64_t _version = version.load(),
              unlocked = bitMask & _version;
 
-    // If the lock has already been released
-    if (!(_version >> longShift)) {
+    // If the lock has already been released (or never taken)
+    if ((_version >> longShift) == 0) {
         return false;
     }
     
@@ -37,9 +37,12 @@ bool Lock::release() {
 
 bool Lock::setVersion(uint64_t newVersion) {
     uint64_t oldVersion = version.load();
-    if (!(oldVersion >> longShift)) {
+
+    // If the lock has already been released (or never taken)
+    if ((oldVersion >> longShift) == 0) {
         return false;
     }
+
     return compareAndSwap(false, newVersion, oldVersion);
 }
 
@@ -55,7 +58,7 @@ bool Lock::compareAndSwap(bool lock, uint64_t newValue, uint64_t oldValue) {
 }
 
 uint64_t Lock::getVersion(bool lock, uint64_t newValue) {
-    if (newValue >> longShift) {
+    if ((newValue >> longShift) == 1) {
         throw -1;
     }
 

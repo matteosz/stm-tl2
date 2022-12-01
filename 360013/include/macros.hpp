@@ -39,7 +39,7 @@
 
 #define DEBUG
 
-constexpr uint16_t m = 1000U, n = 2000U;
+constexpr uint16_t m = 500U, n = 1000U;
 
 constexpr uint8_t longShift = 63U, shift = 32U;
 
