@@ -81,7 +81,7 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         Version before = word.sampleLock();
         memcpy(dstWord, &word.value, region->align);
 
-        // Sample the lock again to check if a concurrent transaction has occurred
+        // Sample the lock again to check whether a concurrent transaction has occurred
         Version after = word.sampleLock();
 
         // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
