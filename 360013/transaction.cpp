@@ -50,6 +50,10 @@ void Transaction::setWVersion(atomic_uint64_t *clock) {
     wVersion = clock->fetch_add(1) + 1;
 }
 
+void Transaction::setRVersion(uint64_t clock) {
+    wVersion = clock;
+}
+
 void Transaction::clear() {
     for (const auto &address : wSet) {
         free(address.second);

@@ -20,6 +20,7 @@ class Transaction {
         void release(Region*,uint32_t);
         bool validate(Region*);
         void setWVersion(atomic_uint64_t*);
+        void setRVersion(uint64_t);
         void clear();
         bool commit(Region*);
 };
