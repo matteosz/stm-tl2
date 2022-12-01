@@ -13,7 +13,7 @@
 // Internal headers
 #include <transaction.hpp>
 
-static atomic_uint64_t globalClock(0);
+atomic_uint64_t globalClock(0);
 static thread_local Transaction tr(false);
 
 shared_t tm_create(size_t size, size_t align) noexcept {
@@ -40,7 +40,7 @@ size_t tm_align(shared_t shared) noexcept {
     return ((Region*) shared)->align;
 }
 
-tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
+tx_t tm_begin(shared_t unused(shared), bool is_ro) noexcept {
     tr.begin(&globalClock, is_ro);
     return (tx_t) &tr;
 }
@@ -85,20 +85,9 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         Version after = word.sampleLock();
 
         // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
-        if (after.lock || (before.versionNumber != after.versionNumber)) {
+        if (after.lock || (before.versionNumber != after.versionNumber) || (before.versionNumber > tr.rVersion)) {
             tr.clear();
             return false;
-        }
-
-        if (before.versionNumber > tr.rVersion) {
-            // Instead of failing directly revalidate the readset again
-            uint64_t clock = globalClock.load();
-            if (tr.validate(region)) {
-                tr.setRVersion(clock);
-            } else {
-                tr.clear();
-                return false;
-            }
         }
 
         tr.insertReadSet(srcWord);
@@ -114,6 +103,7 @@ bool tm_write(shared_t shared, tx_t unused(tx), void const* source, size_t size,
         tx_t dstWord = dst + wordNum * region->align;
         void *srcWord = (void*) (src + wordNum * region->align), *cp = malloc(region->align);
         
+
         // Copy the content of the source to a temporary memory region
         memcpy(cp, srcWord, region->align);
 
