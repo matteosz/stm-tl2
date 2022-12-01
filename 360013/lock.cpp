@@ -59,7 +59,7 @@ bool Lock::compareAndSwap(bool lock, uint64_t newValue, uint64_t oldValue) {
 
 uint64_t Lock::getVersion(bool lock, uint64_t newValue) {
     if ((newValue >> longShift) == 1) {
-        throw -1;
+        throw exception();
     }
 
     // Inglobe the lock bit in the version number

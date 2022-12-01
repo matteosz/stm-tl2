@@ -34,7 +34,6 @@ bool Transaction::isEmpty() {
 }
 
 bool Transaction::acquire(Region *region, uint32_t *count) {
-    *count = 0;
     for (const auto &target : wSet) {
         Word &word = region->getWord(target.first);
         if (!word.acquire()) {

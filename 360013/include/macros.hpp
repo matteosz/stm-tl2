@@ -39,9 +39,9 @@
 
 #define DEBUG
 
-constexpr uint16_t m = 500U, n = 1000U;
+constexpr uint16_t m = 1000U, n = 2000U;
 
 constexpr uint8_t longShift = 63U, shift = 32U;
 
-// 0111...111
+// 0111...111 - 1000...000
 constexpr uint64_t bitMask = (1ULL << 63U) - 1ULL, firstBitMask = 1ULL << 63U;
