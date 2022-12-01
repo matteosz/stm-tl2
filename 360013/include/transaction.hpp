@@ -6,7 +6,7 @@ class Transaction {
     public: 
         uint64_t rVersion, wVersion;
         unordered_set<void*> rSet;
-        unordered_map<tx_t,void*> wSet;
+        map<tx_t,void*> wSet;
         bool rOnly;
         
         Transaction(bool);
