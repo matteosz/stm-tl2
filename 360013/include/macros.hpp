@@ -45,5 +45,3 @@ constexpr uint8_t longShift = 63U, shift = 32U;
 
 // 0111...111
 constexpr uint64_t bitMask = (1ULL << 63U) - 1ULL, firstBitMask = 1ULL << 63U;
-
-constexpr void *_start = (void*) (1ULL << 32U);

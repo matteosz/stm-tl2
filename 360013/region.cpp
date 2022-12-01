@@ -19,7 +19,7 @@ bool Word::setVersion(uint64_t newVersion) {
 }
 
 Region::Region(size_t _size, size_t _align) : 
-        start(_start), 
+        start((void*) (1ULL << 32U)), 
         size(_size), 
         align(_align), 
         matrix(m, vector<Word>(n)),
