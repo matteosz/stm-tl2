@@ -79,16 +79,42 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         }
 
         Version before = word.sampleLock();
+
+        if (before.lock) {
+            tr.clear();
+            return false;
+        }
+
         memcpy(dstWord, &word.value, region->align);
 
         // Sample the lock again to check whether a concurrent transaction has occurred
         Version after = word.sampleLock();
 
         // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
-        if (after.lock || (before.versionNumber != after.versionNumber) || (before.versionNumber > tr.rVersion)) {
+        if (after.lock || (before.versionNumber != after.versionNumber)) {
             tr.clear();
             return false;
         }
+
+        if (tr.rOnly && after.versionNumber > tr.rVersion) {
+            uint64_t sample = globalClock.load();
+            if (tr.validate(region)) {
+                tr.setRVersion(sample);
+            } else {
+                tr.clear();
+                return false;
+            }
+        }
+        if (tr.rOnly && after.versionNumber > tr.rVersion) {
+            uint64_t sample = globalClock.load();
+            if (tr.validate(region)) {
+                tr.setRVersion(sample);
+            } else {
+                tr.clear();
+                return false;
+            }
+        }
+    
         tr.insertReadSet(srcWord);
     }
     return true;

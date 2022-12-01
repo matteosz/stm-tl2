@@ -76,7 +76,7 @@ void Transaction::release(Region *region, uint32_t count) {
 
 bool Transaction::validate(Region *region) {
     for (const auto address : rSet) {
-        Word &word = region->getWord((uintptr_t) address);
+        Word &word = region->getWord((tx_t) address);
         Version version = word.sampleLock();
         if (version.lock || (version.versionNumber > rVersion)) {
             return false;
