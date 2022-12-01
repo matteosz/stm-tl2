@@ -2,8 +2,8 @@
 
 Transaction::Transaction(bool ro) : rOnly(ro) {}
 
-void Transaction::begin(Region *region, bool _rOnly) {
-    rVersion = region->sampleClock();
+void Transaction::begin(atomic_uint64_t *clock, bool _rOnly) {
+    rVersion = clock->load();
     rOnly = _rOnly;
 }
 
@@ -46,8 +46,8 @@ bool Transaction::acquire(Region *region, uint32_t *count) {
     return true;
 }
 
-void Transaction::setWVersion(Region *region) {
-    wVersion = region->fetchAndIncClock() + 1;
+void Transaction::setWVersion(atomic_uint64_t *clock) {
+    wVersion = clock->fetch_add(1) + 1;
 }
 
 void Transaction::clear() {

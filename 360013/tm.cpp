@@ -13,6 +13,7 @@
 // Internal headers
 #include <transaction.hpp>
 
+static atomic_uint64_t globalClock(0);
 static thread_local Transaction tr(false);
 
 shared_t tm_create(size_t size, size_t align) noexcept {
@@ -40,7 +41,7 @@ size_t tm_align(shared_t shared) noexcept {
 }
 
 tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
-    tr.begin((Region*) shared, is_ro);
+    tr.begin(&globalClock, is_ro);
     return (tx_t) &tr;
 }
 
@@ -53,7 +54,7 @@ bool tm_end(shared_t shared, tx_t unused(tx)) noexcept {
         return (tr.rOnly || tr.isEmpty())? true : false;
     }
 
-    tr.setWVersion(region);
+    tr.setWVersion(&globalClock);
     
     if ((tr.rVersion != tr.wVersion - 1) && !tr.validate(region)) {
         tr.release(region, count);
@@ -99,9 +100,9 @@ bool tm_write(shared_t shared, tx_t unused(tx), void const* source, size_t size,
     tx_t src = (tx_t) source, dst = (tx_t) target;
 
     for (size_t wordNum = 0; wordNum < size / region->align; wordNum++) {
-        void *srcWord = (void*) (src + wordNum * region->align), *cp = malloc(region->align);
         tx_t dstWord = dst + wordNum * region->align;
-
+        void *srcWord = (void*) (src + wordNum * region->align), *cp = malloc(region->align);
+        
         // Copy the content of the source to a temporary memory region
         memcpy(cp, srcWord, region->align);
 

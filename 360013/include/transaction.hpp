@@ -11,7 +11,7 @@ class Transaction {
         
         Transaction(bool);
         
-        void begin(Region*,bool);
+        void begin(atomic_uint64_t*,bool);
         bool search(tx_t,void*,size_t);
         void insertReadSet(tx_t);
         void insertWriteSet(tx_t,void*);
@@ -19,7 +19,7 @@ class Transaction {
         bool acquire(Region*,uint32_t*);
         void release(Region*,uint32_t);
         bool validate(Region*);
-        void setWVersion(Region*);
+        void setWVersion(atomic_uint64_t*);
         void clear();
         bool commit(Region*);
 };

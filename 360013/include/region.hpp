@@ -23,13 +23,11 @@ class Region {
 
         Region(size_t,size_t);
 
-        uint64_t sampleClock();
         Word &getWord(tx_t);
-        uint64_t fetchAndIncClock();
         void *getAddress();
 
     private:
-        atomic_uint64_t globalClock, nextSegment;
+        atomic_uint64_t nextSegment;
         uint64_t getRow(tx_t);
         uint64_t getCol(tx_t);
 };
