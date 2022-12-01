@@ -46,14 +46,14 @@ tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
 
 bool tm_end(shared_t shared, tx_t unused(tx)) noexcept {
     Region *region = (Region*) shared;
-    uint32_t count = 0;
+    uint32_t count;
 
     if (tr.rOnly || tr.isEmpty() || !tr.acquire(region, &count)) {
         tr.clear();
         return (tr.rOnly || tr.isEmpty())? true : false;
     }
 
-    tr.setWVersion(region->fetchAndIncClock());
+    tr.setWVersion(region);
     
     if ((tr.rVersion != tr.wVersion - 1) && !tr.validate(region)) {
         tr.release(region, count);

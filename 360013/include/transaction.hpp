@@ -19,7 +19,7 @@ class Transaction {
         bool acquire(Region*,uint32_t*);
         void release(Region*,uint32_t);
         bool validate(Region*);
-        void setWVersion(uint64_t);
+        void setWVersion(Region*);
         void clear();
         bool commit(Region*);
 };
