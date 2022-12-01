@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <bitset>
 
 /** Define a proposition as likely true.
  * @param prop Proposition
@@ -36,10 +37,10 @@
     #define unused(variable)
     #warning This compiler has no support for GCC attributes
 #endif
-
+//
 #define DEBUG
-
-constexpr uint16_t m = 1000U, n = 2000U;
+//
+constexpr uint16_t m = 500U, n = 1000U;
 
 constexpr uint8_t longShift = 63U, shift = 32U;
 

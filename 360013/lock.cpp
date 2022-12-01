@@ -15,6 +15,9 @@ bool Lock::acquire() {
      *  1 -> taken, 0 -> not taken already
      */
     if ((_version >> longShift) == 1) {
+        #ifdef DEBUG
+            cout << "Impossible to acquire, locked already: version = " << bitset<64>(_version) << "\n"; 
+        #endif
         return false;
     }
 
@@ -27,7 +30,10 @@ bool Lock::release() {
              unlocked = bitMask & _version;
 
     // If the lock has already been released (or never taken)
-    if ((_version >> longShift) == 0) {
+    if ((_version >> longShift) != 1) {
+        #ifdef DEBUG
+            cout << "Impossible to release, not locked: version = " << bitset<64>(_version) << "\n"; 
+        #endif
         return false;
     }
     
@@ -39,7 +45,10 @@ bool Lock::setVersion(uint64_t newVersion) {
     uint64_t oldVersion = version.load();
 
     // If the lock has already been released (or never taken)
-    if ((oldVersion >> longShift) == 0) {
+    if ((oldVersion >> longShift) != 1) {
+        #ifdef DEBUG
+            cout << "Impossible to set new version, locked already: old_version = " << bitset<64>(oldVersion) << "\n"; 
+        #endif
         return false;
     }
 
@@ -59,11 +68,17 @@ bool Lock::compareAndSwap(bool lock, uint64_t newValue, uint64_t oldValue) {
 
 uint64_t Lock::getVersion(bool lock, uint64_t newValue) {
     if ((newValue >> longShift) == 1) {
+        #ifdef DEBUG
+            cout << "Too big version = " << bitset<64>(newValue) << "\n"; 
+        #endif
         throw exception();
     }
 
     // Inglobe the lock bit in the version number
     if (lock) {
+        #ifdef DEBUG
+            cout << "Lock was true, concat version = " << bitset<64>(firstBitMask | newValue) << "\n"; 
+        #endif
         return firstBitMask | newValue;
     }
     return newValue;
