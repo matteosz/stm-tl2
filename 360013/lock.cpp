@@ -71,7 +71,7 @@ uint64_t Lock::getVersion(bool lock, uint64_t newValue) {
         #ifdef DEBUG
             cout << "Too big version = " << bitset<64>(newValue) << "\n"; 
         #endif
-        throw exception();
+        throw -1;
     }
 
     // Inglobe the lock bit in the version number
