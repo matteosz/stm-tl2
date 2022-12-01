@@ -85,12 +85,12 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         Version after = word.sampleLock();
 
         // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
-        if (after.lock || (before.versionNumber != after.versionNumber)) {
+        if (after.lock || (before.versionNumber != after.versionNumber) || (before.versionNumber > tr.rVersion)) {
             tr.clear();
             return false;
         }
 
-        if (before.versionNumber > tr.rVersion) {
+        /*if (before.versionNumber > tr.rVersion) {
             // Instead of failing directly revalidate the readset again
             uint64_t clock = globalClock.load();
             if (tr.validate(region)) {
@@ -99,7 +99,7 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
                 tr.clear();
                 return false;
             }
-        }
+        }*/
 
         tr.insertReadSet(srcWord);
     }
