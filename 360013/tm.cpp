@@ -40,15 +40,7 @@ size_t tm_align(shared_t shared) noexcept {
 }
 
 tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
-    // Sample the global clock
-    tr.setClock((Region*) shared);
-    tr.setRo(is_ro);
-
-    #ifdef DEBUG
-        cout << "Transaction starts: type = " << (is_ro? "R" : "RW")
-             << " rv = " << tr.rVersion << "\n";
-    #endif
-
+    tr.begin((Region*) shared, is_ro);
     return (tx_t) &tr;
 }
 
@@ -58,7 +50,7 @@ bool tm_end(shared_t shared, tx_t unused(tx)) noexcept {
 
     if (tr.rOnly || tr.isEmpty() || !tr.acquire(region, &count)) {
         tr.clear();
-        return tr.rOnly || tr.isEmpty() ? true : false;
+        return (tr.rOnly || tr.isEmpty())? true : false;
     }
 
     tr.setWVersion(region->fetchAndIncClock());
@@ -78,13 +70,13 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
 
     for (size_t wordNum = 0; wordNum < size / region->align; wordNum++) {
         tx_t srcWord = src + wordNum * region->align;
+        Word &word = region->getWord(srcWord);
         void *dstWord = (void*) (dst + wordNum * region->align);
 
         if (tr.search(srcWord, dstWord, region->align)) {
             continue;
         }
 
-        Word &word = region->getWord(srcWord);
         Version before = word.sampleLock();
         memcpy(dstWord, &word.value, region->align);
 
@@ -92,7 +84,7 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         Version after = word.sampleLock();
 
         // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
-        if (after.lock || before.versionNumber != after.versionNumber || before.versionNumber > tr.rVersion) {
+        if (after.lock || (before.versionNumber != after.versionNumber) || (before.versionNumber > tr.rVersion)) {
             tr.clear();
             return false;
         }
@@ -116,12 +108,11 @@ bool tm_write(shared_t shared, tx_t unused(tx), void const* source, size_t size,
         // Insert that address into the writeSet
         tr.insertWriteSet(dstWord, cp);
     }
-
     return true;
 }
 
 Alloc tm_alloc(shared_t shared, tx_t unused(tx), size_t unused(size), void** target) noexcept {
-    *target = (void*) (((Region*) shared)->fetchAndIncSegments() << shift);
+    *target = ((Region*) shared)->getAddress();
     return Alloc::success;
 }
 
