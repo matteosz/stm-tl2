@@ -13,8 +13,7 @@ class Transaction {
 
         void setRo(bool);
         void setClock(Region*);
-        unordered_map<tx_t,void*>::iterator search(tx_t);
-        unordered_map<tx_t,void*>::iterator wEnd();
+        bool search(tx_t,void*,size_t);
         void insertReadSet(tx_t);
         void insertWriteSet(tx_t,void*);
         bool isEmpty();

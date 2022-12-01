@@ -2,8 +2,6 @@
 
 #include <lock.hpp>
 
-using namespace std;
-
 class Word {
     public:
         uint64_t value;
@@ -26,7 +24,7 @@ class Region {
         Region(size_t,size_t);
 
         uint64_t sampleClock();
-        Word *getWord(tx_t);
+        Word &getWord(tx_t);
         uint64_t fetchAndIncSegments();
         uint64_t fetchAndIncClock();
 

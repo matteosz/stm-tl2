@@ -43,17 +43,26 @@ tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
     // Sample the global clock
     tr.setClock((Region*) shared);
     tr.setRo(is_ro);
+
+    #ifdef DEBUG
+        cout << "Transaction starts: type = " << (is_ro? "R" : "RW")
+             << " rv = " << tr.rVersion << "\n";
+    #endif
+
     return (tx_t) &tr;
 }
 
 bool tm_end(shared_t shared, tx_t unused(tx)) noexcept {
     Region *region = (Region*) shared;
     uint32_t count = 0;
-    if (tr.rOnly || tr.isEmpty() || tr.acquire(region, &count)) {
+
+    if (tr.rOnly || tr.isEmpty() || !tr.acquire(region, &count)) {
         tr.clear();
-        return true;
+        return tr.rOnly || tr.isEmpty() ? true : false;
     }
+
     tr.setWVersion(region->fetchAndIncClock());
+    
     if ((tr.rVersion != tr.wVersion - 1) && !tr.validate(region)) {
         tr.release(region, count);
         tr.clear();
@@ -65,27 +74,22 @@ bool tm_end(shared_t shared, tx_t unused(tx)) noexcept {
 
 bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, void* target) noexcept {
     Region *region = (Region*) shared;
-    tx_t src = (tx_t) source;
+    tx_t src = (tx_t) source, dst = (tx_t) target;
 
     for (size_t wordNum = 0; wordNum < size / region->align; wordNum++) {
-        tx_t sourceWord = src + wordNum * region->align;
-        void *targetWord = (void*) ((tx_t) target + wordNum * region->align);
+        tx_t srcWord = src + wordNum * region->align;
+        void *dstWord = (void*) (dst + wordNum * region->align);
 
-        if (!tr.rOnly) {
-            auto search = tr.search(sourceWord);
-            // Already present in the write set
-            if (search != tr.wEnd()) {
-                memcpy(targetWord, search->second, region->align);
-                continue;
-            }
+        if (tr.search(srcWord, dstWord, region->align)) {
+            continue;
         }
 
-        Word *word = region->getWord(sourceWord);
-        Version before = word->sampleLock();
-        memcpy(targetWord, &word->value, region->align);
+        Word &word = region->getWord(srcWord);
+        Version before = word.sampleLock();
+        memcpy(dstWord, &word.value, region->align);
 
         // Sample the lock again to check if a concurrent transaction has occurred
-        Version after = word->sampleLock();
+        Version after = word.sampleLock();
 
         // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
         if (after.lock || before.versionNumber != after.versionNumber || before.versionNumber > tr.rVersion) {
@@ -93,34 +97,31 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
             return false;
         }
 
-        if (!tr.rOnly) {
-            tr.insertReadSet(sourceWord);
-        }
+        tr.insertReadSet(srcWord);
     }
-
     return true;
 }
 
 bool tm_write(shared_t shared, tx_t unused(tx), void const* source, size_t size, void* target) noexcept {
     Region *region = (Region*) shared;
-    tx_t dst = (tx_t) target;
+    tx_t src = (tx_t) source, dst = (tx_t) target;
 
     for (size_t wordNum = 0; wordNum < size / region->align; wordNum++) {
-        void *sourceWord = (void*) ((tx_t) source + wordNum * region->align), *cp = malloc(region->align);
-        tx_t targetWord = dst + wordNum * region->align;
+        void *srcWord = (void*) (src + wordNum * region->align), *cp = malloc(region->align);
+        tx_t dstWord = dst + wordNum * region->align;
 
         // Copy the content of the source to a temporary memory region
-        memcpy(cp, sourceWord, region->align);
+        memcpy(cp, srcWord, region->align);
 
         // Insert that address into the writeSet
-        tr.insertWriteSet(targetWord, cp);
+        tr.insertWriteSet(dstWord, cp);
     }
 
     return true;
 }
 
 Alloc tm_alloc(shared_t shared, tx_t unused(tx), size_t unused(size), void** target) noexcept {
-    *target = (void*) (((Region*) shared)->fetchAndIncSegments() << smallShift);
+    *target = (void*) (((Region*) shared)->fetchAndIncSegments() << shift);
     return Alloc::success;
 }
 

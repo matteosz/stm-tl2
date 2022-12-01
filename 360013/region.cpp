@@ -19,7 +19,7 @@ bool Word::setVersion(uint64_t newVersion) {
 }
 
 Region::Region(size_t _size, size_t _align) : 
-        start((void*) (reference << smallShift)), 
+        start(_start), 
         size(_size), 
         align(_align), 
         matrix(m, vector<Word>(n)),
@@ -30,8 +30,8 @@ uint64_t Region::sampleClock() {
     return globalClock.load();
 }
 
-Word *Region::getWord(tx_t address) {
-    return &matrix[getRow(address)][getCol(address)];
+Word &Region::getWord(tx_t address) {
+    return matrix[getRow(address)][getCol(address)];
 }
 
 uint64_t Region::fetchAndIncSegments() {
@@ -43,9 +43,9 @@ uint64_t Region::fetchAndIncClock() {
 }
 
 uint16_t Region::getRow(tx_t address) {
-    return address >> smallShift;
+    return address >> shift;
 }
 
 uint16_t Region::getCol(tx_t address) {
-    return ((address << smallShift) >> smallShift) / align;
+    return ((address << shift) >> shift) / align;
 }

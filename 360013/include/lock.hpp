@@ -5,9 +5,12 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <cstring>
+#include <iostream>
 
 #include "macros.hpp"
 #include "../../include/tm.hpp"
+
+using namespace std;
 
 class Version {
     public:
@@ -18,7 +21,7 @@ class Version {
 
 class Lock {
     public:
-        std::atomic_uint64_t version;
+        atomic_uint64_t version;
 
         Lock();
         Lock(const Lock&);

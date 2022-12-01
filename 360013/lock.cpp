@@ -1,7 +1,7 @@
 #include <lock.hpp>
 
 Version::Version(uint64_t _versionNumber, uint64_t _versionLock, uint64_t _lock) : 
-                versionNumber(_versionNumber), versionLock(_versionLock), lock(_lock == reference) {}
+                versionNumber(_versionNumber), versionLock(_versionLock), lock(_lock == 1) {}
                 
 Lock::Lock() : version(0) {}
 Lock::Lock(const Lock &_lock) : version(_lock.version.load()) {}
@@ -14,7 +14,7 @@ bool Lock::acquire() {
     /** The lock is represented by the first bit of the version
      *  1 -> taken, 0 -> not taken already
      */
-    if (_version >> bigShift) {
+    if (_version >> longShift) {
         return false;
     }
 
@@ -27,7 +27,7 @@ bool Lock::release() {
              unlocked = bitMask & _version;
 
     // If the lock has already been released
-    if (!(_version >> bigShift)) {
+    if (!(_version >> longShift)) {
         return false;
     }
     
@@ -37,7 +37,7 @@ bool Lock::release() {
 
 bool Lock::setVersion(uint64_t newVersion) {
     uint64_t oldVersion = version.load();
-    if (!(oldVersion >> bigShift)) {
+    if (!(oldVersion >> longShift)) {
         return false;
     }
     return compareAndSwap(false, newVersion, oldVersion);
@@ -47,7 +47,7 @@ Version Lock::sampleLock() {
     uint64_t _version = version.load();
     return Version(bitMask & _version, 
                     _version, 
-                    _version >> bigShift);
+                    _version >> longShift);
 }
 
 bool Lock::compareAndSwap(bool lock, uint64_t newValue, uint64_t oldValue) {
@@ -55,9 +55,13 @@ bool Lock::compareAndSwap(bool lock, uint64_t newValue, uint64_t oldValue) {
 }
 
 uint64_t Lock::getVersion(bool lock, uint64_t newValue) {
+    if (newValue >> longShift) {
+        throw -1;
+    }
+
     // Inglobe the lock bit in the version number
     if (lock) {
-        return (reference << bigShift) | newValue;
+        return firstBitMask | newValue;
     }
     return newValue;
 }

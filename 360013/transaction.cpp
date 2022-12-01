@@ -10,16 +10,22 @@ void Transaction::setRo(bool _rOnly) {
     rOnly = _rOnly;
 }
 
-unordered_map<tx_t, void*>::iterator Transaction::search(tx_t address) {
-    return wSet.find(address);
-}
-
-unordered_map<tx_t, void*>::iterator Transaction::wEnd() {
-    return wSet.end();
+bool Transaction::search(tx_t address, void* target, size_t align) {
+    if (!rOnly) {
+        auto search = wSet.find(address);
+        // Already present in the write set
+        if (search != wSet.end()) {
+            memcpy(target, search->second, align);
+            return true;
+        }
+    }
+    return false;
 }
 
 void Transaction::insertReadSet(tx_t address) {
-    rSet.insert((void*) address);
+    if (!rOnly) {
+        rSet.emplace((void*) address);
+    }
 }
 
 void Transaction::insertWriteSet(tx_t target, void *source) {
@@ -31,9 +37,9 @@ bool Transaction::isEmpty() {
 }
 
 bool Transaction::acquire(Region *region, uint32_t *count) {
-    for (auto &target : wSet) {
-        Word *word = region->getWord(target.first);
-        if (!word->acquire()) {
+    for (const auto &target : wSet) {
+        Word &word = region->getWord(target.first);
+        if (!word.acquire()) {
             release(region, *count);
             return false;
         }
@@ -63,9 +69,9 @@ void Transaction::release(Region *region, uint32_t count) {
     if (!count) {
         return;
     }
-    for (auto &target : wSet) {
-        Word *word = region->getWord(target.first);
-        word->release();
+    for (const auto &target : wSet) {
+        Word &word = region->getWord(target.first);
+        word.release();
         if (count-- < 2) {
             break;
         }
@@ -73,9 +79,9 @@ void Transaction::release(Region *region, uint32_t count) {
 }
 
 bool Transaction::validate(Region *region) {
-    for (auto address : rSet) {
-        Word *word = region->getWord((uintptr_t) address);
-        Version version = word->sampleLock();
+    for (const auto address : rSet) {
+        Word &word = region->getWord((uintptr_t) address);
+        Version version = word.sampleLock();
         if (version.lock || version.versionNumber > rVersion) {
             return false;
         }
@@ -84,10 +90,10 @@ bool Transaction::validate(Region *region) {
 }
 
 bool Transaction::commit(Region *region) {
-    for (auto &target : wSet) {
-        Word *word = region->getWord(target.first);
-        memcpy(&word->value, target.second, region->align);
-        if (!word->setVersion(wVersion)) {
+    for (const auto &target : wSet) {
+        Word &word = region->getWord(target.first);
+        memcpy(&word.value, target.second, region->align);
+        if (!word.setVersion(wVersion)) {
             clear();
             return false;
         }

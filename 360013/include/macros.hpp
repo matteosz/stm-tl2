@@ -37,10 +37,13 @@
     #warning This compiler has no support for GCC attributes
 #endif
 
+#define DEBUG
 
-constexpr uint16_t m = 1000, n = 2000;
+constexpr uint16_t m = 1000U, n = 2000U;
 
-constexpr uint8_t bigShift = 63, smallShift = 32;
+constexpr uint8_t longShift = 63U, shift = 32U;
 
 // 0111...111
-constexpr uint64_t reference = 1, bitMask = (reference << bigShift) - reference;
+constexpr uint64_t bitMask = (1ULL << 63U) - 1ULL, firstBitMask = 1ULL << 63U;
+
+constexpr void *_start = (void*) (1ULL << 32U);
