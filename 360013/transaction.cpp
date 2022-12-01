@@ -2,7 +2,7 @@
 
 Transaction::Transaction(bool ro) : rOnly(ro) {}
 
-void Transaction::begin(atomic_uint *clock, bool _rOnly) {
+void Transaction::begin(atomic_uint64_t *clock, bool _rOnly) {
     rVersion = clock->load();
     rOnly = _rOnly;
 }
@@ -12,7 +12,7 @@ bool Transaction::search(tx_t address, void* target, size_t align) {
         auto search = wSet.find(address);
         // Already present in the write set
         if (search != wSet.end()) {
-            #ifdef DEBUG
+            #ifdef _DEBUG_
                 cout << "Address found on write set, just copying\n";
             #endif
             memcpy(target, search->second, align);
@@ -48,7 +48,7 @@ bool Transaction::acquire(Region *region, uint32_t *count) {
     return true;
 }
 
-void Transaction::setWVersion(atomic_uint *clock) {
+void Transaction::setWVersion(atomic_uint64_t *clock) {
     wVersion = clock->fetch_add(1) + 1;
 }
 
@@ -92,7 +92,7 @@ bool Transaction::commit(Region *region) {
         Word &word = region->getWord(target.first);
         memcpy(&word.value, target.second, region->align);
         if (!word.setVersion(wVersion)) {
-            #ifdef DEBUG
+            #ifdef _DEBUG_
                 cout << "Failed to commit\n";
             #endif
             clear();
@@ -100,7 +100,7 @@ bool Transaction::commit(Region *region) {
         }
     }
     clear();
-    #ifdef DEBUG
+    #ifdef _DEBUG_
         cout << "Committed correctly\n";
     #endif
     return true;

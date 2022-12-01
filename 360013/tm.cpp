@@ -27,7 +27,7 @@
 // Internal headers
 #include <transaction.hpp>
 
-static atomic_uint globalClock(0);
+static atomic_uint64_t globalClock(0);
 static thread_local Transaction tr(false);
 
 /** Create (i.e. allocate + init) a new shared memory region, with one first non-free-able allocated segment of the requested size and alignment.
@@ -40,7 +40,7 @@ shared_t tm_create(size_t size, size_t align) noexcept {
     if (unlikely(!region)) {
         return invalid_shared;
     }
-    #ifdef DEBUG
+    #ifdef _DEBUG_
         cout << "Region created (size,align): " << size << " " << align << "\n";
     #endif
     return region;
@@ -50,7 +50,7 @@ shared_t tm_create(size_t size, size_t align) noexcept {
  * @param shared Shared memory region to destroy, with no running transaction
 **/
 void tm_destroy(shared_t shared) noexcept {
-    #ifdef DEBUG
+    #ifdef _DEBUG_
         cout << "Region destroyed\n";
     #endif
     delete (Region*) shared;
@@ -61,7 +61,7 @@ void tm_destroy(shared_t shared) noexcept {
  * @return Start address of the first allocated segment
 **/
 void* tm_start(shared_t shared) noexcept {
-    #ifdef DEBUG
+    #ifdef _DEBUG_
         cout << "Region start address: " << ((Region*) shared)->start << "\n";
     #endif
     return ((Region*) shared)->start;
@@ -72,7 +72,7 @@ void* tm_start(shared_t shared) noexcept {
  * @return First allocated segment size
 **/
 size_t tm_size(shared_t shared) noexcept {
-    #ifdef DEBUG
+    #ifdef _DEBUG_
         cout << "Region size: " << ((Region*) shared)->size << "\n";
     #endif
     return ((Region*) shared)->size;
@@ -83,7 +83,7 @@ size_t tm_size(shared_t shared) noexcept {
  * @return Alignment used globally
 **/
 size_t tm_align(shared_t shared) noexcept {
-    #ifdef DEBUG
+    #ifdef _DEBUG_
         cout << "Region alignment: " << ((Region*) shared)->align << "\n";
     #endif
     return ((Region*) shared)->align;
@@ -96,7 +96,7 @@ size_t tm_align(shared_t shared) noexcept {
 **/
 tx_t tm_begin(shared_t unused(shared), bool is_ro) noexcept {
     tr.begin(&globalClock, is_ro);
-    #ifdef DEBUG
+    #ifdef _DEBUG_
         cout << "Transaction started: rv = " << tr.rVersion << " ro = " << is_ro << "\n";
     #endif
     return (tx_t) &tr;
@@ -113,7 +113,7 @@ bool tm_end(shared_t shared, tx_t unused(tx)) noexcept {
 
     if (tr.rOnly || tr.isEmpty()) {
         tr.clear();
-        #ifdef DEBUG
+        #ifdef _DEBUG_
             cout << "Transaction ended correctly\n";
         #endif
         return true;
@@ -121,14 +121,14 @@ bool tm_end(shared_t shared, tx_t unused(tx)) noexcept {
 
     if (!tr.acquire(region, &count)) {
         tr.clear();
-        #ifdef DEBUG
+        #ifdef _DEBUG_
             cout << "Transaction failed to acquire, impossible to commit\n";
         #endif
         return false;
     }
 
     tr.setWVersion(&globalClock);
-    #ifdef DEBUG
+    #ifdef _DEBUG_
         cout << "Set new writeVersion: " << tr.wVersion << ", readVersion: " 
         << tr.rVersion << "\n";
     #endif
@@ -136,7 +136,7 @@ bool tm_end(shared_t shared, tx_t unused(tx)) noexcept {
     if ((tr.rVersion != tr.wVersion - 1) && !tr.validate(region)) {
         tr.release(region, count);
         tr.clear();
-        #ifdef DEBUG
+        #ifdef _DEBUG_
             cout << "Released transaction - failed to validate\n";
         #endif
         return false;
@@ -165,7 +165,7 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
             continue;
         }
 
-        #ifdef DEBUG
+        #ifdef _DEBUG_
             cout << "Address not found on write set, trying to sample lock...\n";
         #endif
 
@@ -173,7 +173,7 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         Version before = word.sampleLock();
 
         if (before.lock) {
-            #ifdef DEBUG
+            #ifdef _DEBUG_
                 cout << "Address already locked - Stopped\n";
             #endif
             tr.clear();
@@ -183,7 +183,7 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         // Copy the content of the word in the private memory
         memcpy(dstWord, &word.value, region->align);
 
-        #ifdef DEBUG
+        #ifdef _DEBUG_
             cout << "Content copied in memory, trying to resample lock...\n";
         #endif
 
@@ -197,20 +197,20 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         }
 
         if (tr.rOnly && after.versionNumber > tr.rVersion) {
-            #ifdef DEBUG
+            #ifdef _DEBUG_
                 cout << "Lock free but version number: " << after.versionNumber
                 << " > readVersion (" << tr.rVersion << "). Let's revalidate...\n";
             #endif
             uint64_t sample = globalClock.load();
             if (tr.validate(region)) {
-                #ifdef DEBUG
+                #ifdef _DEBUG_
                     cout << "Rivalidation executed correctly: new readVersion: " << 
                     sample << "\n";
                 #endif
                 tr.setRVersion(sample);
                 continue;
             } else {
-                #ifdef DEBUG
+                #ifdef _DEBUG_
                     cout << "Rivalidation failed\n";
                 #endif
                 tr.clear();
@@ -244,7 +244,7 @@ bool tm_write(shared_t shared, tx_t unused(tx), void const* source, size_t size,
 
         // Insert that address into the writeSet
         tr.insertWriteSet(dstWord, cp);
-        #ifdef DEBUG
+        #ifdef _DEBUG_
             cout << "Write: Inserted in writeSet the address " << cp << 
             "mapped by the virtual shared address " << dstWord << "\n";
         #endif
@@ -261,7 +261,7 @@ bool tm_write(shared_t shared, tx_t unused(tx), void const* source, size_t size,
 **/
 Alloc tm_alloc(shared_t shared, tx_t unused(tx), size_t unused(size), void** target) noexcept {
     *target = ((Region*) shared)->getAddress();
-    #ifdef DEBUG
+    #ifdef _DEBUG_
         cout << "Transaction allocated at address:" << *target << "\n";
     #endif
     return Alloc::success;

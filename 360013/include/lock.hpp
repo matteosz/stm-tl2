@@ -1,14 +1,6 @@
 #pragma once
 
-#include <vector>
-#include <atomic>
-#include <unordered_set>
-#include <map>
-#include <cstring>
-#include <iostream>
-
 #include "macros.hpp"
-#include "../../include/tm.hpp"
 
 using namespace std;
 
