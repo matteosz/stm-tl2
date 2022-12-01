@@ -89,21 +89,6 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
             tr.clear();
             return false;
         }
-
-<<<<<<< HEAD
-        /*if (before.versionNumber > tr.rVersion) {
-            // Instead of failing directly revalidate the readset again
-            uint64_t clock = globalClock.load();
-            if (tr.validate(region)) {
-                tr.setRVersion(clock);
-            } else {
-                tr.clear();
-                return false;
-            }
-        }*/
-
-=======
->>>>>>> e51d6e98ce7b1c51b95b465c6e1197a7af8d1500
         tr.insertReadSet(srcWord);
     }
     return true;
