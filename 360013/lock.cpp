@@ -1,4 +1,4 @@
-#include <lock.hpp>
+#include "lock.hpp"
 
 Version::Version(uint64_t _versionNumber, uint64_t _versionLock, uint64_t _lock) : 
                 versionNumber(_versionNumber), versionLock(_versionLock), lock(_lock == 1) {}

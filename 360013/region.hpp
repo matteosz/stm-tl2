@@ -1,6 +1,6 @@
 #pragma once
 
-#include <lock.hpp>
+#include "lock.hpp"
 
 class Word {
     public:

@@ -25,7 +25,7 @@
 #endif
 
 // Internal headers
-#include <transaction.hpp>
+#include "transaction.hpp"
 
 static atomic_uint64_t globalClock(0);
 static thread_local Transaction tr(false);
