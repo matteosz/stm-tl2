@@ -6,6 +6,10 @@
 **/
 
 // Requested features
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#define _POSIX_C_SOURCE 200809L
 #ifdef __STDC_NO_ATOMICS__
     #error Current C11 compiler does not support atomic operations
 #endif
@@ -14,16 +18,16 @@
 #include <transaction.hpp>
 
 static atomic_uint64_t globalClock(0);
-static thread_local Transaction tr(false);
+static thread_local Transaction tr;
 
 shared_t tm_create(size_t size, size_t align) noexcept {
     Region *region = new Region(size, align);
-    if (unlikely(!region)) {
+    /*if (unlikely(!region)) {
         #ifdef _DEBUG_
-        cout << "Region failed to create\n";
-    #endif
+            cout << "Region failed to create\n";
+        #endif
         return invalid_shared;
-    }
+    }*/
     #ifdef _DEBUG_
         cout << "Region created (size,align): " << size << " " << align << "\n";
     #endif
@@ -37,11 +41,11 @@ void tm_destroy(shared_t shared) noexcept {
     delete (Region*) shared;
 }
 
-void* tm_start(shared_t shared) noexcept {
+void* tm_start(shared_t unused(shared)) noexcept {
     #ifdef _DEBUG_
         cout << "Region start address: " << ((Region*) shared)->start << "\n";
     #endif
-    return ((Region*) shared)->start;
+    return reinterpret_cast<void*>(firstAddress);
 }
 
 size_t tm_size(shared_t shared) noexcept {
@@ -59,10 +63,11 @@ size_t tm_align(shared_t shared) noexcept {
 }
 
 tx_t tm_begin(shared_t unused(shared), bool is_ro) noexcept {
-    tr.begin(&globalClock, is_ro);
-    #ifdef _DEBUG_
+    tr.rVersion = globalClock.load();
+    tr.rOnly = is_ro;
+    /*#ifdef _DEBUG_
         cout << "Transaction started: rv = " << tr.rVersion << " ro = " << is_ro << "\n";
-    #endif
+    #endif*/
     return (tx_t) &tr;
 }
 
@@ -121,15 +126,15 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         #endif
 
         Word &word = region->getWord(srcWord);
-        Version before = word.sampleLock();
+        Version before = word.lock.sampleLock();
 
-        if (before.lock) {
+        /*if (before.lock) {
             #ifdef _DEBUG_
                 cout << "Address already locked - Stopped\n";
             #endif
             tr.clear();
             return false;
-        }
+        }*/
 
         memcpy(dstWord, &word.value, region->align);
 
@@ -138,7 +143,7 @@ bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, 
         #endif
 
         // Sample the lock again to check if a concurrent transaction has occurred
-        Version after = word.sampleLock();
+        Version after = word.lock.sampleLock();
 
         // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
         if (after.lock || (before.versionNumber != after.versionNumber) || (after.versionNumber > tr.rVersion)) {

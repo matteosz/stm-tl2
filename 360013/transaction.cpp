@@ -1,16 +1,11 @@
 #include <transaction.hpp>
 
-Transaction::Transaction(bool ro) : rOnly(ro) {}
-
-void Transaction::begin(atomic_uint64_t *clock, bool _rOnly) {
-    rVersion = clock->load();
-    rOnly = _rOnly;
-}
+Transaction::Transaction() : rOnly(false) {}
 
 bool Transaction::search(tx_t address, void* target, size_t align) {
     if (!rOnly) {
         auto search = wSet.find(address);
-        // Already present in the write set
+        // If already present in the write set
         if (search != wSet.end()) {
             #ifdef _DEBUG_
                 cout << "Address found on write set, just copying\n";
@@ -39,7 +34,7 @@ bool Transaction::isEmpty() {
 bool Transaction::acquire(Region *region, uint32_t *count) {
     for (const auto &target : wSet) {
         Word &word = region->getWord(target.first);
-        if (!word.acquire()) {
+        if (!word.lock.acquire()) {
             release(region, *count);
             return false;
         }
@@ -60,10 +55,10 @@ void Transaction::clear() {
     for (const auto &address : wSet) {
         free(address.second);
     }
-    rSet.clear();
-    wSet.clear();
     rVersion = 0;
     rOnly = false;
+    rSet.clear();
+    wSet.clear();
 }
 
 void Transaction::release(Region *region, uint32_t count) {
@@ -71,7 +66,7 @@ void Transaction::release(Region *region, uint32_t count) {
         return;
     }
     for (const auto &target : wSet) {
-        region->releaseMemory(target.first);
+        region->getWord(target.first).lock.release();
         if (count == 1) {
             // Don't free the first segment
             break;
@@ -82,7 +77,7 @@ void Transaction::release(Region *region, uint32_t count) {
 
 bool Transaction::validate(Region *region) {
     for (const auto address : rSet) {
-        if (!region->getWord((tx_t) address).sampleLock().valid(rVersion)) {
+        if (!region->getWord((tx_t) address).lock.sampleLock().valid(rVersion)) {
             return false;
         }
     }
@@ -93,7 +88,7 @@ bool Transaction::commit(Region *region) {
     for (const auto target : wSet) {
         Word &word = region->getWord(target.first);
         memcpy(&word.value, target.second, region->align);
-        if (!word.setVersion(wVersion)) {
+        if (!word.lock.setVersion(wVersion)) {
             clear();
             #ifdef _DEBUG_
                 cout << "Failed to commit\n";

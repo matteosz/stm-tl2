@@ -3,7 +3,7 @@
 #include <vector>
 #include <atomic>
 #include <unordered_set>
-#include <unordered_map>
+#include <map>
 #include <cstring>
 #include <iostream>
 #include <bitset>
@@ -17,7 +17,7 @@ class Version {
     public:
         uint64_t versionNumber, versionLock;
         bool lock;
-        Version(uint64_t,uint64_t,uint64_t);
+        Version(uint64_t,uint64_t,bool);
 
         bool valid(uint64_t);
 };
@@ -33,8 +33,4 @@ class Lock {
         bool release();
         bool setVersion(uint64_t);
         Version sampleLock();
-
-    private:
-        bool compareAndSwap(bool,uint64_t,uint64_t);
-        uint64_t getVersion(bool,uint64_t);
 };

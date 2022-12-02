@@ -1,7 +1,24 @@
 #include <lock.hpp>
 
-Version::Version(uint64_t _versionNumber, uint64_t _versionLock, uint64_t _lock) : 
-                versionNumber(_versionNumber), versionLock(_versionLock), lock(_lock == 1) {}
+static uint64_t getVersion(bool lock, uint64_t newValue) {
+    /*if (newValue >> longShift) {
+        #ifdef _DEBUG_
+            cout << "Too big version = " << bitset<64>(newValue) << "\n"; 
+        #endif
+        throw new exception();
+    }*/
+    // Inglobe the lock bit in the version number
+    if (lock) {
+        #ifdef _DEBUG_
+            cout << "Lock was true, concat version = " << bitset<64>(firstBitMask | newValue) << "\n"; 
+        #endif
+        return firstBitMask | newValue;
+    }
+    return newValue;
+}
+
+Version::Version(uint64_t _versionNumber, uint64_t _versionLock, bool _lock) : 
+                versionNumber(_versionNumber), versionLock(_versionLock), lock(_lock) {}
 
 bool Version::valid(uint64_t rVersion) {
     return (!lock && (versionNumber <= rVersion));
@@ -26,7 +43,7 @@ bool Lock::acquire() {
     }
 
     // Perform c&s in case of concurrent access to the lock after the check
-    return compareAndSwap(true, unlocked, _version);
+    return version.compare_exchange_weak(_version, getVersion(true, unlocked));
 }
 
 bool Lock::release() {
@@ -42,7 +59,7 @@ bool Lock::release() {
     }
     
     // Perform c&s in case of concurrent access to the lock after the check
-    return compareAndSwap(false, unlocked, _version);
+    return version.compare_exchange_weak(_version, getVersion(false, unlocked));
 }
 
 bool Lock::setVersion(uint64_t newVersion) {
@@ -56,7 +73,7 @@ bool Lock::setVersion(uint64_t newVersion) {
         return false;
     }
 
-    return compareAndSwap(false, newVersion, oldVersion);
+    return version.compare_exchange_weak(oldVersion, getVersion(false, newVersion));
 }
 
 Version Lock::sampleLock() {
@@ -64,26 +81,4 @@ Version Lock::sampleLock() {
     return Version(bitMask & _version, 
                     _version, 
                     _version >> longShift);
-}
-
-bool Lock::compareAndSwap(bool lock, uint64_t newValue, uint64_t oldValue) {
-    return version.compare_exchange_strong(oldValue, getVersion(lock, newValue));
-}
-
-uint64_t Lock::getVersion(bool lock, uint64_t newValue) {
-    if (newValue >> longShift) {
-        #ifdef _DEBUG_
-            cout << "Too big version = " << bitset<64>(newValue) << "\n"; 
-        #endif
-        throw new exception();
-    }
-
-    // Inglobe the lock bit in the version number
-    if (lock) {
-        #ifdef _DEBUG_
-            cout << "Lock was true, concat version = " << bitset<64>(firstBitMask | newValue) << "\n"; 
-        #endif
-        return firstBitMask | newValue;
-    }
-    return newValue;
 }

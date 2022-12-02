@@ -6,12 +6,11 @@ class Transaction {
     public: 
         uint64_t rVersion, wVersion;
         unordered_set<void*> rSet;
-        unordered_map<tx_t,void*> wSet;
+        map<tx_t,void*> wSet;
         bool rOnly;
         
-        Transaction(bool);
+        Transaction();
         
-        void begin(atomic_uint64_t*,bool);
         bool search(tx_t,void*,size_t);
         void insertReadSet(tx_t);
         void insertWriteSet(tx_t,void*);

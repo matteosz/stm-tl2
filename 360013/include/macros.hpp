@@ -37,11 +37,13 @@
     #warning This compiler has no support for GCC attributes
 #endif
 
-#define DEBUG_
+//#define DEBUG_
 
-constexpr uint16_t m = 1000U, n = 2000U;
+static constexpr uint16_t m = 450U, n = 800U;
 
-constexpr uint8_t longShift = 63U, shift = 32U;
+static constexpr uint8_t longShift = 63U, shift = 32U;
 
 // 0111...111, 1000...000
-constexpr uint64_t bitMask = (1ULL << 63U) - 1ULL, firstBitMask = 1ULL << 63U, firstAddress = 1ULL;
+static constexpr uint64_t bitMask = (1ULL << 63U) - 1ULL, firstBitMask = 1ULL << 63U;
+
+static constexpr intptr_t firstAddress = 0x1;
