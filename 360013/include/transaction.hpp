@@ -1,12 +1,12 @@
 #pragma once
 
-#include "region.hpp"
+#include <region.hpp>
 
 class Transaction {
     public: 
         uint64_t rVersion, wVersion;
         unordered_set<void*> rSet;
-        map<tx_t,void*> wSet;
+        unordered_map<tx_t,void*> wSet;
         bool rOnly;
         
         Transaction(bool);

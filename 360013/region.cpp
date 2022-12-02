@@ -1,4 +1,4 @@
-#include "region.hpp"
+#include <region.hpp>
 
 Word::Word() : value(0) {}
 
@@ -19,7 +19,7 @@ bool Word::setVersion(uint64_t newVersion) {
 }
 
 Region::Region(size_t _size, size_t _align) : 
-        start((void*) (1ULL << 32U)), 
+        start((void*) firstAddress), 
         size(_size), 
         align(_align), 
         matrix(m, vector<Word>(n)),
@@ -29,14 +29,18 @@ Word &Region::getWord(tx_t address) {
     return matrix[getRow(address)][getCol(address)];
 }
 
+void Region::releaseMemory(tx_t address) {
+    getWord(address).release();
+}
+
 void *Region::getAddress() {
     return (void*) (nextSegment.fetch_add(1) << shift);
 }
 
-uint64_t Region::getRow(tx_t address) {
+uint32_t Region::getRow(tx_t address) {
     return address >> shift;
 }
 
-uint64_t Region::getCol(tx_t address) {
-    return ((address << shift) >> shift) / align;
+uint32_t Region::getCol(tx_t address) {
+    return (uint32_t) address / align;
 }

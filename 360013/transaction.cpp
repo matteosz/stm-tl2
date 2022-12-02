@@ -1,4 +1,4 @@
-#include "transaction.hpp"
+#include <transaction.hpp>
 
 Transaction::Transaction(bool ro) : rOnly(ro) {}
 
@@ -52,6 +52,10 @@ void Transaction::setWVersion(atomic_uint64_t *clock) {
     wVersion = clock->fetch_add(1) + 1;
 }
 
+void Transaction::setRVersion(uint64_t newVersion) {
+    rVersion = newVersion;
+}
+
 void Transaction::clear() {
     for (const auto &address : wSet) {
         free(address.second);
@@ -63,13 +67,13 @@ void Transaction::clear() {
 }
 
 void Transaction::release(Region *region, uint32_t count) {
-    if (count == 0) {
+    if (!count) {
         return;
     }
     for (const auto &target : wSet) {
-        Word &word = region->getWord(target.first);
-        word.release();
-        if (count < 2) {
+        region->releaseMemory(target.first);
+        if (count == 1) {
+            // Don't free the first segment
             break;
         }
         --count;
@@ -78,9 +82,7 @@ void Transaction::release(Region *region, uint32_t count) {
 
 bool Transaction::validate(Region *region) {
     for (const auto address : rSet) {
-        Word &word = region->getWord((tx_t) address);
-        Version version = word.sampleLock();
-        if (version.lock || (version.versionNumber > rVersion)) {
+        if (!region->getWord((tx_t) address).sampleLock().valid(rVersion)) {
             return false;
         }
     }
@@ -92,10 +94,10 @@ bool Transaction::commit(Region *region) {
         Word &word = region->getWord(target.first);
         memcpy(&word.value, target.second, region->align);
         if (!word.setVersion(wVersion)) {
+            clear();
             #ifdef _DEBUG_
                 cout << "Failed to commit\n";
             #endif
-            clear();
             return false;
         }
     }

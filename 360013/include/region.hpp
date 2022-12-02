@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lock.hpp"
+#include <lock.hpp>
 
 class Word {
     public:
@@ -24,11 +24,12 @@ class Region {
         Region(size_t,size_t);
 
         Word &getWord(tx_t);
+        void releaseMemory(tx_t);
         void *getAddress();
 
     private:
         atomic_uint64_t nextSegment;
-        uint64_t getRow(tx_t);
-        uint64_t getCol(tx_t);
+        uint32_t getRow(tx_t);
+        uint32_t getCol(tx_t);
 };
 
