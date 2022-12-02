@@ -8,7 +8,7 @@
 #include <map>
 #include <cstring>
 #include <iostream>
-#include "../../include/tm.hpp"
+#include <tm.hpp>
 
 /** Define a proposition as likely true.
  * @param prop Proposition
