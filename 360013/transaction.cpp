@@ -23,9 +23,9 @@ void Transaction::clean(Region *region, bool unlock) {
     if (unlock) {
         pthread_rwlock_unlock(&region->cleanLock);
     }
-    for (const auto &[key, value] : writeSet) {
-        if (value) {
-            free(value);
+    for (const auto &item : writeSet) {
+        if (item.second) {
+            free(item.second);
         }
     }
     //delete this;
@@ -69,9 +69,10 @@ bool Transaction::commit(Region *region) {
     for (const auto &[key, value] : writeSet) {
         Segment *segment = region->memory[index(key)];
         size_t offset = offset(key);
+        void *dest = (void*) ((size_t) segment->data + offset);
 
         // Copy in our shared memory the content of the write set
-        memcpy(segment->data + offset, value, region->align);
+        memcpy(dest, value, region->align);
         
         // Set the new version and free the lock
         if (!setVersion(&segment->locks[offset / region->align], writeVersion)) {
@@ -115,9 +116,9 @@ bool Transaction::commit(Region *region) {
 bool Transaction::acquireLocks(Region* region, int *count) {
     // Attempt to acquire the locks of the write set
     // Save the number of locks acquired to release later on
-    for (const auto &[key,value] : writeSet) {
-        if (!acquire(&region->memory[index(key)]
-                            ->locks[offset(key) / region->align])) {
+    for (const auto &pair : writeSet) {
+        if (!acquire(&region->memory[index(pair.first)]
+                            ->locks[offset(pair.first) / region->align])) {
             releaseLocks(region, *count);
             return false;
         }
@@ -130,9 +131,9 @@ void Transaction::releaseLocks(Region* region, int count) {
     if (!count) {
         return;
     }
-    for (const auto &[key, value] : writeSet) {
-        release(&region->memory[index(key)]
-                       ->locks[offset(value) / region->align]);
+    for (const auto &pair : writeSet) {
+        release(&region->memory[index(pair.first)]
+                       ->locks[offset(pair.first) / region->align]);
         if (!--count) {
             break;
         }

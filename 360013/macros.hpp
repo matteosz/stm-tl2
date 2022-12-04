@@ -24,9 +24,9 @@ using namespace std;
 /* MACROS */
 
 // Virtual address translation
-#define index(x) ((((unsigned long) x >> 48) & 0xFFFF) - 1)
-#define offset(x) (size_t) ((unsigned long) x & 0xFFFFFFFFFFFF)
-#define address(x) (void*) (((unsigned long)(x+1) << 48))
+#define index(x) ((((size_t) x >> 48) & 0xFFFF) - 1)
+#define offset(x) ((size_t) x & 0xFFFFFFFFFFFF)
+#define address(x) (void*) (((size_t)(x+1) << 48))
 
 // By assuming x is an integer, if it's locked (MSB=1), then it's negative
 #define isLocked(x) (x < 0)
@@ -39,7 +39,7 @@ using namespace std;
 /* CONSTANTS */
 
 // Threshold to start freeing the transaction alloc segments
-#define BATCH 200
+#define BATCH 64
 
 // Number of preallocated segments = 2^16
 #define MAXSEGMENTS 0x10000

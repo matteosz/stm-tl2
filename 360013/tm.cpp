@@ -9,7 +9,7 @@
 #include <transaction.hpp>
 
 #define INIT Segment *segment = region->memory[index(source)]; \
-             int offset = offset(source); \
+             size_t offset = offset(source); \
              int start = offset / region->align, wordNum = size / region->align;
 
 /** Create (i.e. allocate + init) a new shared memory region, with one first non-free-able allocated segment of the requested size and alignment.
@@ -124,7 +124,7 @@ bool ro_read(shared_t shared, Transaction *transaction, void const* source, size
     }
 
     // Execute the transaction
-    memcpy(target, segment->data + offset, size);
+    memcpy(target, (void*) ((size_t) segment->data + offset), size);
 
     // Post validate the version
     for (int idx = 0; idx < wordNum; idx++) {
@@ -174,11 +174,14 @@ bool rw_read(shared_t shared, Transaction *transaction, void const* source, size
     REG
     INIT
 
+    size_t data = (size_t) segment->data;
+    uintptr_t src = (uintptr_t) source, tgt = (uintptr_t) target;
+
     for (int idx = 0; idx < wordNum; idx++) {
-        const void *word = source + idx * region->align;
+        void *word = (void*) (src + idx * region->align);
 
         // Speculative execution
-        auto search = transaction->writeSet.find((void*) word);
+        auto search = transaction->writeSet.find(word);
         if (search != transaction->writeSet.end()) {
             #ifdef _DEBUG_
                 cout << "Address found on write set, just copying\n";
@@ -202,7 +205,7 @@ bool rw_read(shared_t shared, Transaction *transaction, void const* source, size
             ABORT
         }
 
-        memcpy(target + idx * region->align, segment->data + (start + idx) * region->align, region->align);
+        memcpy((void*) (tgt + idx * region->align), (void*) (data + (start + idx) * region->align), region->align);
 
         #ifdef _DEBUG_
             cout << "Content copied in memory, trying to resample lock...\n";
@@ -248,7 +251,9 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
     REG TX
     INIT
 
-    for (uint idx = 0; idx < wordNum; idx++) {
+    uintptr_t src = (uintptr_t) source, tgt = (uintptr_t) target;
+
+    for (int idx = 0; idx < wordNum; idx++) {
         atomic_int *lock = &segment->locks[start + idx];
 
         int before = lock->load();
@@ -260,11 +265,11 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
             ABORT
         }
 
-        const void *targetWord = target + idx * region->align;
-        const void *sourceWord = source + idx * region->align;
+        void *targetWord = (void*) (tgt + idx * region->align);
+        void *sourceWord = (void*) (src + idx * region->align);
 
         // If already in the write set
-        auto search = transaction->writeSet.find((void*) targetWord);
+        auto search = transaction->writeSet.find(targetWord);
         if (search != transaction->writeSet.end()) {
             #ifdef _DEBUG_
                 cout << "Address found on write set\n";
@@ -285,7 +290,7 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
         memcpy(copy, sourceWord, region->align);
 
         // Insert that address into the writeSet
-        transaction->writeSet[(void*) targetWord] = copy;
+        transaction->writeSet[targetWord] = copy;
 
         // Remove from read set to avoid problematic duplicates when validating
         transaction->readSet.erase(lock);
