@@ -1,10 +1,15 @@
 #include <transaction.hpp>
 
-Transaction::Transaction(bool _readOnly, Region *region) : 
+Transaction::Transaction(bool _readOnly, Region *_region) : 
                                                         readOnly(_readOnly), 
-                                                        readVersion(region->globalClock.load()) {
+                                                        readVersion(_region->globalClock.load()),
+                                                        region(_region),
+                                                        failed(false) {
     // Take the SHARED read lock 
-    pthread_rwlock_rdlock(&region->cleanLock);
+    pthread_rwlock_rdlock(&_region->cleanLock);
+    #ifdef _DEBUG_
+        cout << "TM_BEGIN, readOnly=" << _readOnly << "\n";
+    #endif
 }
 
 bool Transaction::validate() {
@@ -17,21 +22,9 @@ bool Transaction::validate() {
         }
     }
     return true;
-}
+} 
 
-void Transaction::clean(Region *region, bool unlock) {
-    if (unlock) {
-        pthread_rwlock_unlock(&region->cleanLock);
-    }
-    for (const auto &item : writeSet) {
-        if (item.second) {
-            free(item.second);
-        }
-    }
-    //delete this;
-}
-
-bool Transaction::commit(Region *region) {
+bool Transaction::commit() {
     // If it's read only or the write set is empty can commit
     if (readOnly || writeSet.empty()) {
         pthread_rwlock_unlock(&region->cleanLock);
@@ -40,7 +33,7 @@ bool Transaction::commit(Region *region) {
 
     // Otherwise try to acquire all the locks, if fails abort
     int count = 0;
-    if (!acquireLocks(region, &count)) {
+    if (!acquireLocks(&count)) {
         #ifdef _DEBUG_
             cout << "Failed to acquire the locks during commit\n";
         #endif
@@ -61,7 +54,7 @@ bool Transaction::commit(Region *region) {
         #ifdef _DEBUG_
             cout << "Failed to validate the read set, releasing the locks and aborting...\n";
         #endif
-        releaseLocks(region, count);
+        releaseLocks(count);
         _ABORT
     }
 
@@ -111,15 +104,27 @@ bool Transaction::commit(Region *region) {
     COMMIT
 }
 
+Transaction::~Transaction() {
+    if (failed) {
+        pthread_rwlock_unlock(&region->cleanLock);
+    }
+    for (const auto &item : writeSet) {
+        if (item.second) {
+            free(item.second);
+        }
+    }
+}
+
+
 /* ----- PRIVATE -----*/
 
-bool Transaction::acquireLocks(Region* region, int *count) {
+bool Transaction::acquireLocks(int *count) {
     // Attempt to acquire the locks of the write set
     // Save the number of locks acquired to release later on
     for (const auto &pair : writeSet) {
         if (!acquire(&region->memory[index(pair.first)]
                             ->locks[offset(pair.first) / region->align])) {
-            releaseLocks(region, *count);
+            releaseLocks(*count);
             return false;
         }
         ++*count;
@@ -127,7 +132,7 @@ bool Transaction::acquireLocks(Region* region, int *count) {
     return true;
 }
 
-void Transaction::releaseLocks(Region* region, int count) {
+void Transaction::releaseLocks(int count) {
     if (!count) {
         return;
     }

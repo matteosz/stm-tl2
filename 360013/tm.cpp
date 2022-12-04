@@ -1,16 +1,19 @@
 /**
  * @file   tm.cpp
  * @author Matteo Suez
+ * 
  * @section DESCRIPTION
- * Implementation of my transaction manager based on TL2.
+ * 
+ * TL2-based implementation of STM
 **/
 
 // Internal headers
 #include <transaction.hpp>
 
-#define INIT Segment *segment = region->memory[index(source)]; \
-             size_t offset = offset(source); \
-             int start = offset / region->align, wordNum = size / region->align;
+// Shorthand macro
+#define INIT(x) Segment *segment = region->memory[index(x)];                          \
+                size_t off = offset(x);                                               \
+                int start = off / region->align, wordNum = size / region->align;
 
 /** Create (i.e. allocate + init) a new shared memory region, with one first non-free-able allocated segment of the requested size and alignment.
  * @param size  Size of the first shared segment of memory to allocate (in bytes), must be a positive multiple of the alignment
@@ -19,11 +22,8 @@
 **/
 shared_t tm_create(size_t size, size_t align) noexcept {
     try {
-        return new Region(size, align);
-    } catch (const runtime_error& e) {
-        #ifdef _DEBUG_
-            cout << "Couldn't create the region:" << e.what() << "\n";
-        #endif
+        return new Region(align, size);
+    } catch (const bad_alloc& e) {
         return invalid_shared;
     }
 }
@@ -41,6 +41,9 @@ void tm_destroy(shared_t shared) noexcept {
  * @return Start address of the first allocated segment
 **/
 void* tm_start(shared_t unused(shared)) noexcept {
+    #ifdef _DEBUG_
+        cout << "TM_START-> address:" << address(0) << "\n";
+    #endif
     return address(0);
 }
 
@@ -51,7 +54,7 @@ void* tm_start(shared_t unused(shared)) noexcept {
 size_t tm_size(shared_t shared) noexcept {
     REG
     #ifdef _DEBUG_
-        cout << "Region size: " << region->memory[0]->size << "\n";
+        cout << "TM_SIZE-> size: " << region->memory[0]->size << "\n";
     #endif
     return region->memory[0]->size;
 }
@@ -63,7 +66,7 @@ size_t tm_size(shared_t shared) noexcept {
 size_t tm_align(shared_t shared) noexcept {
     REG
     #ifdef _DEBUG_
-        cout << "Region alignment: " << region->align << "\n";
+        cout << "TM_ALIGN-> align: " << region->align << "\n";
     #endif
     return region->align;
 }
@@ -79,7 +82,7 @@ tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
         return (tx_t) new Transaction(is_ro, region);
     } catch (const bad_alloc& e) {
         #ifdef _DEBUG_
-            cout << "Transaction couldn't begin: " << e.what() << "\n";
+            cout << "TM_BEGIN-> failed to allocate\n";
         #endif
         return invalid_tx;
     }
@@ -90,9 +93,9 @@ tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
  * @param tx     Transaction to end
  * @return Whether the whole transaction committed
 **/
-bool tm_end(shared_t shared, tx_t tx) noexcept {
-    REG TX 
-    bool result = transaction->commit(region);
+bool tm_end(shared_t unused(shared), tx_t tx) noexcept {
+    TX 
+    bool result = transaction->commit();
     #ifdef _DEBUG_
         cout << "Transaction ended, commit: " << result << "\n";
     #endif
@@ -108,8 +111,11 @@ bool tm_end(shared_t shared, tx_t tx) noexcept {
  * @return Whether the whole transaction can continue
 **/
 bool ro_read(shared_t shared, Transaction *transaction, void const* source, size_t size, void* target) noexcept {
-    REG
-    INIT
+    REG INIT(source)
+
+    #ifdef _DEBUG_
+        cout << "TM_READONLY start\n";
+    #endif
 
     // Pre validate the locks
     int before[wordNum];
@@ -123,8 +129,16 @@ bool ro_read(shared_t shared, Transaction *transaction, void const* source, size
         }
     }
 
+    #ifdef _DEBUG_
+        cout << "Locks were free, copying memory\n";
+    #endif
+
     // Execute the transaction
-    memcpy(target, (void*) ((size_t) segment->data + offset), size);
+    memcpy(target, (void*) ((size_t) segment->data + off), size);
+
+    #ifdef _DEBUG_
+        cout << "Post validation starts\n";
+    #endif
 
     // Post validate the version
     for (int idx = 0; idx < wordNum; idx++) {
@@ -156,9 +170,12 @@ bool ro_read(shared_t shared, Transaction *transaction, void const* source, size
             #endif
         }
 
-        transaction->pushRead(lock);
+        transaction->readSet.emplace(lock);
     }
 
+    #ifdef _DEBUG_
+        cout << "TM_READONLY success\n";
+    #endif
     return true;
 }
 
@@ -171,8 +188,11 @@ bool ro_read(shared_t shared, Transaction *transaction, void const* source, size
  * @return Whether the whole transaction can continue
 **/
 bool rw_read(shared_t shared, Transaction *transaction, void const* source, size_t size, void* target) noexcept {
-    REG
-    INIT
+    REG INIT(source)
+
+    #ifdef _DEBUG_
+        cout << "TM_READ starts\n";
+    #endif
 
     size_t data = (size_t) segment->data;
     uintptr_t src = (uintptr_t) source, tgt = (uintptr_t) target;
@@ -200,7 +220,7 @@ bool rw_read(shared_t shared, Transaction *transaction, void const* source, size
 
         if (isLocked(before) || (before > transaction->readVersion)) {
             #ifdef _DEBUG_
-                cout << "Address already locked - Stopped\n";
+                cout << "Failed: before= " << before << ", rv= " << transaction->readVersion << "\n";
             #endif
             ABORT
         }
@@ -214,11 +234,18 @@ bool rw_read(shared_t shared, Transaction *transaction, void const* source, size
         // Sample the lock again to check if a concurrent transaction has occurred
         // If the word has been locked after, or the 2 version numbers are different or greater than read version
         if (before != lock->load()) {
+            #ifdef _DEBUG_
+                cout << "After lock were taken, or different from before\n";
+            #endif            
             ABORT
         }
 
         transaction->readSet.emplace(lock);
     }
+
+    #ifdef _DEBUG_
+        cout << "TM_READ success\n";
+    #endif
 
     return true;
 }
@@ -246,8 +273,11 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
  * @return Whether the whole transaction can continue
 **/
 bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* target) noexcept {
-    REG TX
-    INIT
+    REG TX INIT(target)
+
+    #ifdef _DEBUG_
+        cout << "TM_WRITE start\n";
+    #endif
 
     uintptr_t src = (uintptr_t) source, tgt = (uintptr_t) target;
 
@@ -258,7 +288,7 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
 
         if (isLocked(before) || (before > transaction->readVersion)) {
             #ifdef _DEBUG_
-                cout << "Address already locked - Stopped\n";
+                cout << "Before: " << before << ", rv: " << transaction->readVersion << "\n";
             #endif
             ABORT
         }
@@ -287,6 +317,10 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
         // Copy the content of the source to a temporary memory region
         memcpy(copy, sourceWord, region->align);
 
+        #ifdef _DEBUG_
+            cout << "Content copied in memory, putting into writeset...\n";
+        #endif
+
         // Insert that address into the writeSet
         transaction->writeSet[targetWord] = copy;
 
@@ -306,13 +340,25 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
 **/
 Alloc tm_alloc(shared_t shared, tx_t unused(tx), size_t size, void** target) noexcept {
     REG
+    #ifdef _DEBUG_
+        cout << "TM_ALLOC starts\n";
+    #endif
     int count = region->getCount();
     try {
+        #ifdef _DEBUG_
+            cout << "Trying to alloc the new segment on count id\n";
+        #endif
         region->memory[count] = new Segment(region->align, size);
     } catch(const std::runtime_error& e) {
+        #ifdef _DEBUG_
+            cout << "Alloc failed\n";
+        #endif
         region->missingIdx.push(count);
         return Alloc::nomem;
     }
+    #ifdef _DEBUG_
+        cout << "Alloc successed\n";
+    #endif
     *target = address(count);
     return Alloc::success;
 }
@@ -325,6 +371,9 @@ Alloc tm_alloc(shared_t shared, tx_t unused(tx), size_t size, void** target) noe
 **/
 bool tm_free(shared_t unused(shared), tx_t tx, void* target) noexcept {
     TX
+    #ifdef _DEBUG_
+        cout << "TM_FREE starts\n";
+    #endif
     transaction->freeBuffer.push_back((index(target)));
     return true;
 }

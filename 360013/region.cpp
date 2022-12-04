@@ -5,16 +5,23 @@
 Segment::Segment(size_t _align, size_t _size) : size(_size) {
     // Allocate the array of locks (1 lock per word)
     int numLocks = _size / _align;
-    locks = new (nothrow) atomic_int[numLocks];
-    if (unlikely(!locks)) {
-        throw new runtime_error("Failed to allocate the locks\n");
+    try {
+        locks = new atomic_int[numLocks];
+    } catch (const bad_alloc& e) {
+        #ifdef _DEBUG_
+            cout << "Failed to allocate the array of locks in the given segment\n";
+        #endif
+        throw e;
     }
     for (int i = 0; i < numLocks; i++) {
         locks[i].store(0);
     }
     // Allocate the memory given the alignment
     if (unlikely(posix_memalign(&data, _align, _size))) {
-        throw new runtime_error("Failed to allocate the given segment\n");
+        #ifdef _DEBUG_
+            cout << "Failed to allocate with posix memalign in the given segment\n";
+        #endif
+        throw new bad_alloc();
     }
 
     // posix_memalign doesn't initialize to 0 the memory allocated, necessary to do it manually
@@ -36,37 +43,49 @@ Region::Region(size_t _align, size_t _size) :
                                             align(_align), 
                                             countSegments(1) {
     #ifdef _DEBUG_
-        cout << "Creating the region\n";
+        cout << "TM_CREATE-> s:" << _size << " a:" << _align << "\n";
     #endif
 
     // Initialize the lock and mutex
     if (unlikely(pthread_mutex_init(&freeLock, nullptr)     || 
                  pthread_mutex_init(&memoryLock, nullptr)   ||
                  pthread_rwlock_init(&cleanLock, nullptr))) {
-        throw new runtime_error("Failed to allocate the mutex\n");
+        #ifdef _DEBUG_
+            cout << "Failed to allocate the mutex and locks\n";
+        #endif
+        throw new bad_alloc();
     }
 
     // Preallocate an array of segments
     memory = (Segment**) malloc(MAXSEGMENTS * sizeof(Segment*));
     if (unlikely(!memory)) {
-        throw new runtime_error("Failed to allocate the region\n");
+        #ifdef _DEBUG_
+            cout << "Failed to allocate the array of segments\n";
+        #endif
+        throw new bad_alloc();
     }
 
     // Allocate the first segment
     try {
         memory[0] = new Segment(_align, _size);
-    } catch (const runtime_error& e) {
+    } catch (const bad_alloc& e) {
+        #ifdef _DEBUG_
+            cout << "Failed to allocate the first segment\n";
+        #endif
         free(memory);
-        throw new runtime_error("Failed to allocate the first segment\n");
+        throw e;
     }
 
     #ifdef _DEBUG_
-        cout << "Region correctly created, size: " << _size << "align: " << align << "\n";
+        cout << "TM_CREATED OK\n";
     #endif
 }
 
 int Region::getCount() {
     int tmp;
+    #ifdef _DEBUG_
+        cout << "Taking memory lock\n";
+    #endif
     pthread_mutex_lock(&memoryLock);
     if (!missingIdx.empty()) {
         tmp = missingIdx.front();
@@ -75,6 +94,9 @@ int Region::getCount() {
         tmp = countSegments++;
     }
     pthread_mutex_unlock(&memoryLock);
+    #ifdef _DEBUG_
+        cout << "Unlocked memory lock, count=" << tmp << "\n";
+    #endif
     return tmp;
 }
 

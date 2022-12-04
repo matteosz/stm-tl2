@@ -1,25 +1,9 @@
 #pragma once
 
-// External headers
 #include <cstdint>
-#include <vector>
-#include <queue>
-#include <atomic>
-#include <unordered_set>
-#include <map>
-#include <cstring>
-#include <iostream>
-#include <bitset>
-#include <pthread.h>
-
-// Internal header
-#include "../../include/tm.hpp"
-
-// Namespace
-using namespace std;
 
 // Uncomment to activate debug mode
-//#define _DEBUG_
+#define _DEBUG_
 
 /* MACROS */
 
@@ -43,6 +27,9 @@ using namespace std;
 
 // Number of preallocated segments = 2^16
 #define MAXSEGMENTS 0x10000
+
+// Mask to use in the macros
+//static constexpr uint32_t clearMask = (1U << 31) - 1U, lockMask = (1U << 31);
 
 // Requested features
 #ifndef _GNU_SOURCE

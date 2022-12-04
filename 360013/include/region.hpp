@@ -3,8 +3,8 @@
 // Internal header
 #include <lock.hpp>
 
-// Shorthand define
-#define REG Region *region = (Region*) shared; \
+// Shorthand macro
+#define REG Region *region = (Region*) shared;
 
 class Segment {
     public:
