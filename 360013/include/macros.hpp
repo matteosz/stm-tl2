@@ -13,7 +13,7 @@
 #include <pthread.h>
 
 // Internal header
-#include "../include/tm.hpp"
+#include "../../include/tm.hpp"
 
 // Namespace
 using namespace std;

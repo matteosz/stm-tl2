@@ -79,7 +79,7 @@ tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
         return (tx_t) new Transaction(is_ro, region);
     } catch (const bad_alloc& e) {
         #ifdef _DEBUG_
-            cout << "Transaction couldn't begin\n";
+            cout << "Transaction couldn't begin: " << e.what() << "\n";
         #endif
         return invalid_tx;
     }
@@ -212,10 +212,8 @@ bool rw_read(shared_t shared, Transaction *transaction, void const* source, size
         #endif
 
         // Sample the lock again to check if a concurrent transaction has occurred
-        int after = lock->load();
-
         // If the word has been locked after, or the 2 version numbers are different or greater than read version
-        if (before != after) {
+        if (before != lock->load()) {
             ABORT
         }
 
