@@ -1,41 +1,124 @@
 #include <transaction.hpp>
 
-Transaction::Transaction() : rOnly(false) {}
+Transaction::Transaction(bool _readOnly, Region *region) : 
+                                                        readOnly(_readOnly), 
+                                                        readVersion(region->globalClock.load()) {
+    // Take the SHARED read lock 
+    pthread_rwlock_rdlock(&region->cleanLock);
+}
 
-bool Transaction::search(tx_t address, void* target, size_t align) {
-    if (!rOnly) {
-        auto search = wSet.find(address);
-        // If already present in the write set
-        if (search != wSet.end()) {
-            #ifdef _DEBUG_
-                cout << "Address found on write set, just copying\n";
-            #endif
-            memcpy(target, search->second, align);
-            return true;
+bool Transaction::validate() {
+    for (const auto &address : readSet) {
+        int lock = address->load();
+        // Check if the address has write-lock taken or version > read version
+        // If it's not locked (MSB=0) then it's safe to simply cast
+        if (isLocked(lock) || (lock > readVersion)) {
+            return false;
         }
     }
-    return false;
+    return true;
 }
 
-void Transaction::insertReadSet(tx_t address) {
-    if (!rOnly) {
-        rSet.emplace((void*) address);
+void Transaction::clean(Region *region, bool unlock) {
+    if (unlock) {
+        pthread_rwlock_unlock(&region->cleanLock);
     }
+    for (const auto &[key, value] : writeSet) {
+        if (value) {
+            free(value);
+        }
+    }
+    //delete this;
 }
 
-void Transaction::insertWriteSet(tx_t target, void *source) {
-    wSet[target] = source;
+bool Transaction::commit(Region *region) {
+    // If it's read only or the write set is empty can commit
+    if (readOnly || writeSet.empty()) {
+        pthread_rwlock_unlock(&region->cleanLock);
+        COMMIT
+    }
+
+    // Otherwise try to acquire all the locks, if fails abort
+    int count = 0;
+    if (!acquireLocks(region, &count)) {
+        #ifdef _DEBUG_
+            cout << "Failed to acquire the locks during commit\n";
+        #endif
+        _ABORT
+    }
+
+    // From here we acquired the locks, it's important to free them later on (even if abort)
+
+    // Increment gloabl version clock
+    int writeVersion = region->globalClock.fetch_add(1) + 1;
+
+    #ifdef _DEBUG_
+        cout << "Lock acquired, new wv: " << writeVersion << "\n"; 
+    #endif
+
+    // Special case check rv == wv - 1: no need to validate the read set
+    if ((readVersion != writeVersion - 1) && !validate()) {
+        #ifdef _DEBUG_
+            cout << "Failed to validate the read set, releasing the locks and aborting...\n";
+        #endif
+        releaseLocks(region, count);
+        _ABORT
+    }
+
+    // Now we can commit and release the locks
+    for (const auto &[key, value] : writeSet) {
+        Segment *segment = region->memory[index(key)];
+        size_t offset = offset(key);
+
+        // Copy in our shared memory the content of the write set
+        memcpy(segment->data + offset, value, region->align);
+        
+        // Set the new version and free the lock
+        if (!setVersion(&segment->locks[offset / region->align], writeVersion)) {
+            _ABORT
+        }
+    }
+    
+    pthread_rwlock_unlock(&region->cleanLock);
+
+    // Now it's time to free the segments allocated
+    if (!freeBuffer.empty()) {
+        pthread_mutex_lock(&region->freeLock);
+
+        region->freeBuffer.insert(region->freeBuffer.end(), 
+                                  freeBuffer.begin(), freeBuffer.end());
+
+        // Batch the free for improved performance
+        if (region->freeBuffer.size() > BATCH) {
+            pthread_rwlock_wrlock(&region->cleanLock);
+
+            auto it = region->freeBuffer.begin();
+            while (it != region->freeBuffer.end()) {
+                Segment *segment = region->memory[*it];
+                region->memory[*it] = nullptr;
+                delete segment;
+                region->missingIdx.push(*it);
+                it = region->freeBuffer.erase(it);
+            }
+
+            pthread_rwlock_unlock(&region->cleanLock);
+        }
+
+        pthread_mutex_unlock(&region->freeLock);
+    }
+
+    COMMIT
 }
 
-bool Transaction::isEmpty() {
-    return wSet.empty();
-}
+/* ----- PRIVATE -----*/
 
-bool Transaction::acquire(Region *region, uint32_t *count) {
-    for (const auto &target : wSet) {
-        Word &word = region->getWord(target.first);
-        if (!word.lock.acquire()) {
-            release(region, *count);
+bool Transaction::acquireLocks(Region* region, int *count) {
+    // Attempt to acquire the locks of the write set
+    // Save the number of locks acquired to release later on
+    for (const auto &[key,value] : writeSet) {
+        if (!acquire(&region->memory[index(key)]
+                            ->locks[offset(key) / region->align])) {
+            releaseLocks(region, *count);
             return false;
         }
         ++*count;
@@ -43,62 +126,15 @@ bool Transaction::acquire(Region *region, uint32_t *count) {
     return true;
 }
 
-void Transaction::setWVersion(atomic_uint64_t *clock) {
-    wVersion = clock->fetch_add(1) + 1;
-}
-
-void Transaction::setRVersion(uint64_t newVersion) {
-    rVersion = newVersion;
-}
-
-void Transaction::clear() {
-    for (const auto &address : wSet) {
-        free(address.second);
-    }
-    rVersion = 0;
-    rOnly = false;
-    rSet.clear();
-    wSet.clear();
-}
-
-void Transaction::release(Region *region, uint32_t count) {
+void Transaction::releaseLocks(Region* region, int count) {
     if (!count) {
         return;
     }
-    for (const auto &target : wSet) {
-        region->getWord(target.first).lock.release();
-        if (count == 1) {
-            // Don't free the first segment
+    for (const auto &[key, value] : writeSet) {
+        release(&region->memory[index(key)]
+                       ->locks[offset(value) / region->align]);
+        if (!--count) {
             break;
         }
-        --count;
     }
-}
-
-bool Transaction::validate(Region *region) {
-    for (const auto address : rSet) {
-        if (!region->getWord((tx_t) address).lock.sampleLock().valid(rVersion)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool Transaction::commit(Region *region) {
-    for (const auto target : wSet) {
-        Word &word = region->getWord(target.first);
-        memcpy(&word.value, target.second, region->align);
-        if (!word.lock.setVersion(wVersion)) {
-            clear();
-            #ifdef _DEBUG_
-                cout << "Failed to commit\n";
-            #endif
-            return false;
-        }
-    }
-    clear();
-    #ifdef _DEBUG_
-        cout << "Committed correctly\n";
-    #endif
-    return true;
 }
