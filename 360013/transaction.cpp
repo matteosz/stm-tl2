@@ -26,11 +26,11 @@ bool Transaction::validate() {
 
 bool Transaction::commit() {
     // If it's read only or the write set is empty can commit
-    if (readOnly || writeSet.empty()) {
+    if (writeSet.empty()) {
         #ifdef _DEBUG_
             cout << "Committing readonly transaction or empty write set\n";
         #endif
-        pthread_rwlock_unlock(&region->cleanLock);
+        //pthread_rwlock_unlock(&region->cleanLock);
         COMMIT
     }
 

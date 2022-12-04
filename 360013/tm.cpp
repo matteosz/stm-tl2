@@ -275,6 +275,9 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
 **/
 bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* target) noexcept {
     REG TX INIT(target)
+    if (transaction->readOnly) {
+        ABORT
+    }
 
     #ifdef _DEBUG_
         cout << "TM_WRITE start\n";
@@ -284,7 +287,7 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
 
     for (int idx = 0; idx < wordNum; idx++) {
         atomic_int *lock = &segment->locks[start + idx];
-        
+        /*
         int before = lock->load();
 
         if (isLocked(before) || (before > transaction->readVersion)) {
@@ -292,7 +295,7 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
                 cout << "Before: " << before << ", rv: " << transaction->readVersion << "\n";
             #endif
             ABORT
-        }
+        }*/
 
         void *targetWord = (void*) (tgt + idx * region->align);
         void *sourceWord = (void*) (src + idx * region->align);
@@ -350,7 +353,7 @@ Alloc tm_alloc(shared_t shared, tx_t unused(tx), size_t size, void** target) noe
             cout << "Trying to alloc the new segment on count id\n";
         #endif
         region->memory[count] = new Segment(region->align, size);
-    } catch(const std::bad_alloc& e) {
+    } catch(const bad_alloc& e) {
         #ifdef _DEBUG_
             cout << "Alloc failed\n";
         #endif

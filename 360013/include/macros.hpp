@@ -18,15 +18,15 @@
 // Namespace
 using namespace std;
 
-// Uncomment to activate debug mode
-//#define _DEBUG_
+// To activate debug mode
+#define _DEBUG_
 
 /* MACROS */
 
 // Virtual address translation
 #define index(x) ((((size_t) x >> 48) & 0xFFFF) - 1)
-#define offset(x) ((size_t) x & 0xFFFFFFFFFFFF)
-#define address(x) (void*) (((size_t)(x+1) << 48))
+#define offset(x) (size_t) ((size_t) x & 0xFFFFFFFFFFFF)
+#define address(x) (void*) (((size_t) (x+1) << 48))
 
 // By assuming x is an integer, if it's locked (MSB=1), then it's negative
 #define isLocked(x) (x < 0)
@@ -44,7 +44,7 @@ using namespace std;
 // Number of preallocated segments = 2^16
 #define MAXSEGMENTS 0x10000
 
-// Base of virtual address
+// Base of virtual address = 2^48
 #define START_ADDRESS (void*) 0x1000000000000
 
 // Requested features
