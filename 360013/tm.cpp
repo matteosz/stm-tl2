@@ -199,15 +199,15 @@ bool rw_read(Region *region, Transaction *transaction, void const* source, size_
             tgt = (size_t) target;
 
     for (int idx = 0; idx < wordNum; idx++) {
-        void *word = (void*) (src + idx * region->align);
-
+        void *sourceWord = (void*) (src + idx * region->align);
+        void *targetWord = (void*) (tgt + idx * region->align);
         // Speculative execution
-        auto search = transaction->writeSet.find(word);
+        auto search = transaction->writeSet.find(sourceWord);
         if (search != transaction->writeSet.end()) {
             #ifdef _DEBUG_
                 cout << "Address found on write set, just copying\n";
             #endif
-            memcpy(target, search->second, region->align);
+            memcpy(targetWord, search->second, region->align);
             continue;
         }
 
@@ -226,7 +226,7 @@ bool rw_read(Region *region, Transaction *transaction, void const* source, size_
             ABORT
         }
 
-        memcpy((void*) (tgt + idx * region->align), (void*) (data + off + idx * region->align), region->align);
+        memcpy(targetWord, (void*) (data + off + idx * region->align), region->align);
 
         #ifdef _DEBUG_
             cout << "Content copied in memory, trying to resample lock...\n";
