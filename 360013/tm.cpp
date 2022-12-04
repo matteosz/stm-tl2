@@ -287,7 +287,7 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
 
     for (int idx = 0; idx < wordNum; idx++) {
         atomic_int *lock = &segment->locks[start + idx];
-        /*
+        
         int before = lock->load();
 
         if (isLocked(before) || (before > transaction->readVersion)) {
@@ -295,7 +295,7 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
                 cout << "Before: " << before << ", rv: " << transaction->readVersion << "\n";
             #endif
             ABORT
-        }*/
+        }
 
         void *targetWord = (void*) (tgt + idx * region->align);
         void *sourceWord = (void*) (src + idx * region->align);
