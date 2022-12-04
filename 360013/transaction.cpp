@@ -27,6 +27,9 @@ bool Transaction::validate() {
 bool Transaction::commit() {
     // If it's read only or the write set is empty can commit
     if (readOnly || writeSet.empty()) {
+        #ifdef _DEBUG_
+            cout << "Committing readonly transaction or empty write set\n";
+        #endif
         pthread_rwlock_unlock(&region->cleanLock);
         COMMIT
     }
@@ -46,7 +49,7 @@ bool Transaction::commit() {
     int writeVersion = region->globalClock.fetch_add(1) + 1;
 
     #ifdef _DEBUG_
-        cout << "Lock acquired, new wv: " << writeVersion << "\n"; 
+        cout << "Locks acquired, new wv: " << writeVersion << "\n"; 
     #endif
 
     // Special case check rv == wv - 1: no need to validate the read set
@@ -58,25 +61,36 @@ bool Transaction::commit() {
         _ABORT
     }
 
+    #ifdef _DEBUG_
+        cout << "Validation passed\n"; 
+    #endif
+
     // Now we can commit and release the locks
     for (const auto &[key, value] : writeSet) {
         Segment *segment = region->memory[index(key)];
-        size_t offset = offset(key);
-        void *dest = (void*) ((size_t) segment->data + offset);
+        size_t off = offset(key);
+        void *dest = (void*) ((size_t) segment->data + off);
 
         // Copy in our shared memory the content of the write set
         memcpy(dest, value, region->align);
         
         // Set the new version and free the lock
-        if (!setVersion(&segment->locks[offset / region->align], writeVersion)) {
+        if (!setVersion(&segment->locks[off / region->align], writeVersion)) {
+            #ifdef _DEBUG_
+                cout << "Failed to set the new write version\n"; 
+            #endif
             _ABORT
         }
     }
     
     pthread_rwlock_unlock(&region->cleanLock);
+    #ifdef _DEBUG_
+        cout << "Unlock the shared rwlock to clean\n"; 
+    #endif
 
     // Now it's time to free the segments allocated
     if (!freeBuffer.empty()) {
+        // Lock to insert in the region the free buffer
         pthread_mutex_lock(&region->freeLock);
 
         region->freeBuffer.insert(region->freeBuffer.end(), 
@@ -86,6 +100,10 @@ bool Transaction::commit() {
         if (region->freeBuffer.size() > BATCH) {
             pthread_rwlock_wrlock(&region->cleanLock);
 
+            #ifdef _DEBUG_
+                cout << "Batched free starts...\n"; 
+            #endif
+
             auto it = region->freeBuffer.begin();
             while (it != region->freeBuffer.end()) {
                 Segment *segment = region->memory[*it];
@@ -93,6 +111,7 @@ bool Transaction::commit() {
                 delete segment;
                 region->missingIdx.push(*it);
                 it = region->freeBuffer.erase(it);
+                it++;
             }
 
             pthread_rwlock_unlock(&region->cleanLock);

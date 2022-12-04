@@ -21,6 +21,7 @@ Segment::Segment(size_t _align, size_t _size) : size(_size) {
         #ifdef _DEBUG_
             cout << "Failed to allocate with posix memalign in the given segment\n";
         #endif
+        delete[] locks;
         throw new bad_alloc();
     }
 

@@ -44,6 +44,9 @@ using namespace std;
 // Number of preallocated segments = 2^16
 #define MAXSEGMENTS 0x10000
 
+// Base of virtual address
+#define START_ADDRESS (void*) 0x1000000000000
+
 // Requested features
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE

@@ -42,9 +42,9 @@ void tm_destroy(shared_t shared) noexcept {
 **/
 void* tm_start(shared_t unused(shared)) noexcept {
     #ifdef _DEBUG_
-        cout << "TM_START-> address:" << address(0) << "\n";
+        cout << "TM_START-> address:" << START_ADDRESS << "\n";
     #endif
-    return address(0);
+    return START_ADDRESS;
 }
 
 /** [thread-safe] Return the size (in bytes) of the first allocated segment of the shared memory region.
@@ -110,8 +110,8 @@ bool tm_end(shared_t unused(shared), tx_t tx) noexcept {
  * @param target Target start address (in a private region)
  * @return Whether the whole transaction can continue
 **/
-bool ro_read(shared_t shared, Transaction *transaction, void const* source, size_t size, void* target) noexcept {
-    REG INIT(source)
+bool ro_read(Region *region, Transaction *transaction, void const* source, size_t size, void* target) noexcept {
+    INIT(source)
 
     #ifdef _DEBUG_
         cout << "TM_READONLY start\n";
@@ -187,15 +187,16 @@ bool ro_read(shared_t shared, Transaction *transaction, void const* source, size
  * @param target Target start address (in a private region)
  * @return Whether the whole transaction can continue
 **/
-bool rw_read(shared_t shared, Transaction *transaction, void const* source, size_t size, void* target) noexcept {
-    REG INIT(source)
+bool rw_read(Region *region, Transaction *transaction, void const* source, size_t size, void* target) noexcept {
+    INIT(source)
 
     #ifdef _DEBUG_
         cout << "TM_READ starts\n";
     #endif
 
-    size_t data = (size_t) segment->data;
-    uintptr_t src = (uintptr_t) source, tgt = (uintptr_t) target;
+    size_t data = (size_t) segment->data, 
+            src = (size_t) source, 
+            tgt = (size_t) target;
 
     for (int idx = 0; idx < wordNum; idx++) {
         void *word = (void*) (src + idx * region->align);
@@ -225,7 +226,7 @@ bool rw_read(shared_t shared, Transaction *transaction, void const* source, size
             ABORT
         }
 
-        memcpy((void*) (tgt + idx * region->align), (void*) (data + (start + idx) * region->align), region->align);
+        memcpy((void*) (tgt + idx * region->align), (void*) (data + off + idx * region->align), region->align);
 
         #ifdef _DEBUG_
             cout << "Content copied in memory, trying to resample lock...\n";
@@ -259,9 +260,9 @@ bool rw_read(shared_t shared, Transaction *transaction, void const* source, size
  * @return Whether the whole transaction can continue
 **/
 bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* target) noexcept {
-    TX
-    return transaction->readOnly? ro_read(shared, transaction, source, size, target):
-                                  rw_read(shared, transaction, source, size, target);
+    REG TX
+    return transaction->readOnly? ro_read(region, transaction, source, size, target):
+                                  rw_read(region, transaction, source, size, target);
 }
 
 /** [thread-safe] Write operation in the given transaction, source in a private region and target in the shared region.
@@ -279,11 +280,11 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
         cout << "TM_WRITE start\n";
     #endif
 
-    uintptr_t src = (uintptr_t) source, tgt = (uintptr_t) target;
+    size_t src = (size_t) source, tgt = (size_t) target;
 
     for (int idx = 0; idx < wordNum; idx++) {
         atomic_int *lock = &segment->locks[start + idx];
-
+        
         int before = lock->load();
 
         if (isLocked(before) || (before > transaction->readVersion)) {
@@ -349,7 +350,7 @@ Alloc tm_alloc(shared_t shared, tx_t unused(tx), size_t size, void** target) noe
             cout << "Trying to alloc the new segment on count id\n";
         #endif
         region->memory[count] = new Segment(region->align, size);
-    } catch(const std::runtime_error& e) {
+    } catch(const std::bad_alloc& e) {
         #ifdef _DEBUG_
             cout << "Alloc failed\n";
         #endif
@@ -374,6 +375,10 @@ bool tm_free(shared_t unused(shared), tx_t tx, void* target) noexcept {
     #ifdef _DEBUG_
         cout << "TM_FREE starts\n";
     #endif
-    transaction->freeBuffer.push_back((index(target)));
+    int idx = index(target);
+    // Don't push the first segment in the free buffer
+    if (idx) {
+        transaction->freeBuffer.push_back(idx);
+    }
     return true;
 }
