@@ -15,6 +15,9 @@
                 size_t off = offset(x);                                               \
                 int start = off / region->align, wordNum = size / region->align;
 
+static atomic_int globalClock(0);
+static thread_local Transaction transaction;
+
 /** Create (i.e. allocate + init) a new shared memory region, with one first non-free-able allocated segment of the requested size and alignment.
  * @param size  Size of the first shared segment of memory to allocate (in bytes), must be a positive multiple of the alignment
  * @param align Alignment (in bytes, must be a power of 2) that the shared memory region must support
@@ -24,6 +27,9 @@ shared_t tm_create(size_t size, size_t align) noexcept {
     try {
         return new Region(align, size);
     } catch (const bad_alloc& e) {
+        #ifdef _DEBUG_
+            cout << "TM_CREATE-> failed to allocate\n";
+        #endif
         return invalid_shared;
     }
 }
@@ -41,10 +47,7 @@ void tm_destroy(shared_t shared) noexcept {
  * @return Start address of the first allocated segment
 **/
 void* tm_start(shared_t unused(shared)) noexcept {
-    #ifdef _DEBUG_
-        cout << "TM_START-> address:" << START_ADDRESS << "\n";
-    #endif
-    return START_ADDRESS;
+    return address(0);
 }
 
 /** [thread-safe] Return the size (in bytes) of the first allocated segment of the shared memory region.
@@ -76,16 +79,10 @@ size_t tm_align(shared_t shared) noexcept {
  * @param is_ro  Whether the transaction is read-only
  * @return Opaque transaction ID, 'invalid_tx' on failure
 **/
-tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
-    REG
-    try {
-        return (tx_t) new Transaction(is_ro, region);
-    } catch (const bad_alloc& e) {
-        #ifdef _DEBUG_
-            cout << "TM_BEGIN-> failed to allocate\n";
-        #endif
-        return invalid_tx;
-    }
+tx_t tm_begin(shared_t unused(shared), bool is_ro) noexcept {
+    transaction.readOnly = is_ro;
+    transaction.readVersion = atomic_load(&globalClock);
+    return (tx_t) &transaction;
 }
 
 /** [thread-safe] End the given transaction.
@@ -93,9 +90,9 @@ tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
  * @param tx     Transaction to end
  * @return Whether the whole transaction committed
 **/
-bool tm_end(shared_t unused(shared), tx_t tx) noexcept {
-    TX 
-    bool result = transaction->commit();
+bool tm_end(shared_t shared, tx_t unused(tx)) noexcept {
+    REG
+    bool result = transaction.commit(region, &globalClock);
     #ifdef _DEBUG_
         cout << "Transaction ended, commit: " << result << "\n";
     #endif
@@ -110,7 +107,7 @@ bool tm_end(shared_t unused(shared), tx_t tx) noexcept {
  * @param target Target start address (in a private region)
  * @return Whether the whole transaction can continue
 **/
-bool ro_read(Region *region, Transaction *transaction, void const* source, size_t size, void* target) noexcept {
+bool ro_read(Region *region, void const* source, size_t size, void* target) noexcept {
     INIT(source)
 
     #ifdef _DEBUG_
@@ -120,13 +117,14 @@ bool ro_read(Region *region, Transaction *transaction, void const* source, size_
     // Pre validate the locks
     int before[wordNum];
     for (int idx = 0; idx < wordNum; idx++) {
-        before[idx] = segment->locks[start + idx].load();
-        if (isLocked(before[idx])) {
+        int vers = getVersion(&segment->locks[start + idx]);
+        if (vers < 0) {
             #ifdef _DEBUG_
                 cout << "Found a word already locked\n";
             #endif
             ABORT
         }
+        before[idx] = vers;
     }
 
     #ifdef _DEBUG_
@@ -143,7 +141,7 @@ bool ro_read(Region *region, Transaction *transaction, void const* source, size_
     // Post validate the version
     for (int idx = 0; idx < wordNum; idx++) {
         atomic_int *lock = &segment->locks[start + idx];
-        int after = lock->load();
+        int after = getVersion(lock);
 
         // Either after has been locked or after is simply different
         if (before[idx] != after) {
@@ -152,25 +150,25 @@ bool ro_read(Region *region, Transaction *transaction, void const* source, size_
             #endif
             ABORT
         // If after has not been locked then it's safe to cast
-        } else if (after > transaction->readVersion) {
+        } else if (after > transaction.readVersion) {
             // Try to revalidate
             #ifdef _DEBUG_
-                cout << "After version (" << after << ") greater than rv (" << transaction->readVersion << ")\n";
+                cout << "After version (" << after << ") greater than rv (" << transaction.readVersion << ")\n";
             #endif
-            int clock = region->globalClock.load();
-            if (!transaction->validate()) {
+            int clock = atomic_load(&globalClock);
+            if (!transaction.validate()) {
                 #ifdef _DEBUG_
                     cout << "Failed to revalidate\n";
                 #endif
                 ABORT
             }
-            transaction->readVersion = clock;
+            transaction.readVersion = clock;
             #ifdef _DEBUG_
                 cout << "Changed the rv to " << clock << "\n";
             #endif
         }
 
-        transaction->readSet.emplace(lock);
+        transaction.readSet.emplace(lock);
     }
 
     #ifdef _DEBUG_
@@ -187,7 +185,7 @@ bool ro_read(Region *region, Transaction *transaction, void const* source, size_
  * @param target Target start address (in a private region)
  * @return Whether the whole transaction can continue
 **/
-bool rw_read(Region *region, Transaction *transaction, void const* source, size_t size, void* target) noexcept {
+bool rw_read(Region *region, void const* source, size_t size, void* target) noexcept {
     INIT(source)
 
     #ifdef _DEBUG_
@@ -201,13 +199,14 @@ bool rw_read(Region *region, Transaction *transaction, void const* source, size_
     for (int idx = 0; idx < wordNum; idx++) {
         void *sourceWord = (void*) (src + idx * region->align);
         void *targetWord = (void*) (tgt + idx * region->align);
+
         // Speculative execution
-        auto search = transaction->writeSet.find(sourceWord);
-        if (search != transaction->writeSet.end()) {
+        auto search = transaction.writeSet.find(sourceWord);
+        if (search != transaction.writeSet.end()) {
             #ifdef _DEBUG_
                 cout << "Address found on write set, just copying\n";
             #endif
-            memcpy(targetWord, search->second, region->align);
+            memcpy(targetWord, search->second.content, region->align);
             continue;
         }
 
@@ -217,11 +216,11 @@ bool rw_read(Region *region, Transaction *transaction, void const* source, size_
 
         atomic_int *lock = &segment->locks[start + idx];
 
-        int before = lock->load();
+        int before = getVersion(lock);
 
-        if (isLocked(before) || (before > transaction->readVersion)) {
+        if ((before < 0) || (before > transaction.readVersion)) {
             #ifdef _DEBUG_
-                cout << "Failed: before= " << before << ", rv= " << transaction->readVersion << "\n";
+                cout << "Failed: before= " << before << ", rv= " << transaction.readVersion << "\n";
             #endif
             ABORT
         }
@@ -234,14 +233,14 @@ bool rw_read(Region *region, Transaction *transaction, void const* source, size_
 
         // Sample the lock again to check if a concurrent transaction has occurred
         // If the word has been locked after, or the 2 version numbers are different or greater than read version
-        if (before != lock->load()) {
+        if (before != getVersion(lock)) {
             #ifdef _DEBUG_
                 cout << "After lock were taken, or different from before\n";
             #endif            
             ABORT
         }
 
-        transaction->readSet.emplace(lock);
+        transaction.readSet.emplace(lock);
     }
 
     #ifdef _DEBUG_
@@ -259,10 +258,10 @@ bool rw_read(Region *region, Transaction *transaction, void const* source, size_
  * @param target Target start address (in a private region)
  * @return Whether the whole transaction can continue
 **/
-bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* target) noexcept {
-    REG TX
-    return transaction->readOnly? ro_read(region, transaction, source, size, target):
-                                  rw_read(region, transaction, source, size, target);
+bool tm_read(shared_t shared, tx_t unused(tx), void const* source, size_t size, void* target) noexcept {
+    REG
+    return transaction.readOnly? ro_read(region, source, size, target):
+                                  rw_read(region, source, size, target);
 }
 
 /** [thread-safe] Write operation in the given transaction, source in a private region and target in the shared region.
@@ -273,9 +272,10 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
  * @param target Target start address (in the shared region)
  * @return Whether the whole transaction can continue
 **/
-bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* target) noexcept {
-    REG TX INIT(target)
-    if (transaction->readOnly) {
+bool tm_write(shared_t shared, tx_t unused(tx), void const* source, size_t size, void* target) noexcept {
+    REG INIT(target)
+
+    if (transaction.readOnly) {
         ABORT
     }
 
@@ -288,11 +288,11 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
     for (int idx = 0; idx < wordNum; idx++) {
         atomic_int *lock = &segment->locks[start + idx];
         
-        int before = lock->load();
+        int before = getVersion(lock);
 
-        if (isLocked(before) || (before > transaction->readVersion)) {
+        if ((before < 0) || (before > transaction.readVersion)) {
             #ifdef _DEBUG_
-                cout << "Before: " << before << ", rv: " << transaction->readVersion << "\n";
+                cout << "Before: " << before << ", rv: " << transaction.readVersion << "\n";
             #endif
             ABORT
         }
@@ -301,12 +301,12 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
         void *sourceWord = (void*) (src + idx * region->align);
 
         // If already in the write set
-        auto search = transaction->writeSet.find(targetWord);
-        if (search != transaction->writeSet.end()) {
+        auto search = transaction.writeSet.find(targetWord);
+        if (search != transaction.writeSet.end()) {
             #ifdef _DEBUG_
                 cout << "Address found on write set\n";
             #endif
-            memcpy(search->second, sourceWord, region->align);
+            memcpy(search->second.content, sourceWord, region->align);
             continue;
         }
 
@@ -325,11 +325,13 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
             cout << "Content copied in memory, putting into writeset...\n";
         #endif
 
+        void *raw = (void*) ((size_t) segment->data + off + idx * region->align);
+
         // Insert that address into the writeSet
-        transaction->writeSet[targetWord] = copy;
+        transaction.writeSet[targetWord] = {copy, raw, lock};
 
         // Remove from read set to avoid problematic duplicates when validating
-        transaction->readSet.erase(lock);
+        transaction.readSet.erase(lock);
     }
 
     return true;
@@ -373,15 +375,14 @@ Alloc tm_alloc(shared_t shared, tx_t unused(tx), size_t size, void** target) noe
  * @param target Address of the first byte of the previously allocated segment to deallocate
  * @return Whether the whole transaction can continue
 **/
-bool tm_free(shared_t unused(shared), tx_t tx, void* target) noexcept {
-    TX
+bool tm_free(shared_t unused(shared), tx_t unused(tx), void* target) noexcept {
     #ifdef _DEBUG_
         cout << "TM_FREE starts\n";
     #endif
     int idx = index(target);
     // Don't push the first segment in the free buffer
-    if (idx) {
-        transaction->freeBuffer.push_back(idx);
+    if (idx > 0) {
+        transaction.freeBuffer.push_back(idx);
     }
     return true;
 }

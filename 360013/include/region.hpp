@@ -18,7 +18,6 @@ class Segment {
 
 class Region {
     public:
-        atomic_int globalClock;
         size_t align;
         int countSegments;
         Segment **memory;
@@ -26,7 +25,6 @@ class Region {
         vector<int> freeBuffer;
         queue<int> missingIdx;
         pthread_mutex_t memoryLock, freeLock;
-        pthread_rwlock_t cleanLock;
 
         Region(size_t,size_t);
         int getCount();

@@ -2,29 +2,29 @@
 
 // Internal header
 #include <region.hpp>
+#define COMMIT clean(); return true;
+#define _ABORT clean(); return false;
+#define ABORT transaction.clean(); return false; \
 
-// Shorthand macros
-#define TX Transaction *transaction = (Transaction*) tx;      
-#define ABORT transaction->failed=true; delete transaction; return false; 
-#define _ABORT failed = true; delete this; return false;             
-#define COMMIT delete this; return true;
+typedef struct {
+    public:
+        void *content, *raw;
+        atomic_int *lock;
+} WordItem;
 
 class Transaction {
     public:
         bool readOnly; 
         int readVersion;
         unordered_set<atomic_int*> readSet;
-        map<void*,void*> writeSet;
+        map<void*,WordItem> writeSet;
         vector<int> freeBuffer;
-        Region *region;
-        bool failed;
         
-        Transaction(bool,Region*);
+        Transaction();
 
         bool validate();
-        bool commit();
-
-        ~Transaction();
+        bool commit(Region*,atomic_int*);
+        void clean();
     
     private:
         bool acquireLocks(int*);

@@ -1,36 +1,25 @@
 #include <transaction.hpp>
 
-Transaction::Transaction(bool _readOnly, Region *_region) : 
-                                                        readOnly(_readOnly), 
-                                                        readVersion(_region->globalClock.load()),
-                                                        region(_region),
-                                                        failed(false) {
-    // Take the SHARED read lock 
-    pthread_rwlock_rdlock(&_region->cleanLock);
-    #ifdef _DEBUG_
-        cout << "TM_BEGIN, readOnly=" << _readOnly << "\n";
-    #endif
-}
+Transaction::Transaction() : readOnly(false) {}
 
 bool Transaction::validate() {
     for (const auto &address : readSet) {
-        int lock = address->load();
+        int vers = getVersion(address);
         // Check if the address has write-lock taken or version > read version
         // If it's not locked (MSB=0) then it's safe to simply cast
-        if (isLocked(lock) || (lock > readVersion)) {
+        if ((vers < 0) || (vers > readVersion)) {
             return false;
         }
     }
     return true;
 } 
 
-bool Transaction::commit() {
+bool Transaction::commit(Region *region, atomic_int* globalClock) {
     // If it's read only or the write set is empty can commit
-    if (writeSet.empty()) {
+    if (readOnly || writeSet.empty()) {
         #ifdef _DEBUG_
             cout << "Committing readonly transaction or empty write set\n";
         #endif
-        //pthread_rwlock_unlock(&region->cleanLock);
         COMMIT
     }
 
@@ -46,7 +35,7 @@ bool Transaction::commit() {
     // From here we acquired the locks, it's important to free them later on (even if abort)
 
     // Increment gloabl version clock
-    int writeVersion = region->globalClock.fetch_add(1) + 1;
+    int writeVersion = atomic_fetch_add(globalClock, 1) + 1;
 
     #ifdef _DEBUG_
         cout << "Locks acquired, new wv: " << writeVersion << "\n"; 
@@ -66,27 +55,13 @@ bool Transaction::commit() {
     #endif
 
     // Now we can commit and release the locks
-    for (const auto &[key, value] : writeSet) {
-        Segment *segment = region->memory[index(key)];
-        size_t off = offset(key);
-        void *dest = (void*) ((size_t) segment->data + off);
-
+    for (const auto &pair : writeSet) {
         // Copy in our shared memory the content of the write set
-        memcpy(dest, value, region->align);
+        memcpy(pair.second.raw, pair.second.content, region->align);
         
         // Set the new version and free the lock
-        if (!setVersion(&segment->locks[off / region->align], writeVersion)) {
-            #ifdef _DEBUG_
-                cout << "Failed to set the new write version\n"; 
-            #endif
-            _ABORT
-        }
+        update(pair.second.lock, writeVersion);
     }
-    
-    pthread_rwlock_unlock(&region->cleanLock);
-    #ifdef _DEBUG_
-        cout << "Unlock the shared rwlock to clean\n"; 
-    #endif
 
     // Now it's time to free the segments allocated
     if (!freeBuffer.empty()) {
@@ -98,8 +73,6 @@ bool Transaction::commit() {
 
         // Batch the free for improved performance
         if (region->freeBuffer.size() > BATCH) {
-            pthread_rwlock_wrlock(&region->cleanLock);
-
             #ifdef _DEBUG_
                 cout << "Batched free starts...\n"; 
             #endif
@@ -111,10 +84,7 @@ bool Transaction::commit() {
                 delete segment;
                 region->missingIdx.push(*it);
                 it = region->freeBuffer.erase(it);
-                it++;
             }
-
-            pthread_rwlock_unlock(&region->cleanLock);
         }
 
         pthread_mutex_unlock(&region->freeLock);
@@ -123,15 +93,19 @@ bool Transaction::commit() {
     COMMIT
 }
 
-Transaction::~Transaction() {
-    if (failed) {
-        pthread_rwlock_unlock(&region->cleanLock);
-    }
+void Transaction::clean() {
     for (const auto &item : writeSet) {
-        if (item.second) {
-            free(item.second);
+        if (item.second.content) {
+            free(item.second.content);
         }
     }
+    readOnly = false;
+    readVersion = 0;
+    readSet.clear();
+    writeSet.clear();
+    #ifdef _DEBUG_
+        cout << "Transaction correctly cleaned\n"; 
+    #endif
 }
 
 
@@ -141,8 +115,7 @@ bool Transaction::acquireLocks(int *count) {
     // Attempt to acquire the locks of the write set
     // Save the number of locks acquired to release later on
     for (const auto &pair : writeSet) {
-        if (!acquire(&region->memory[index(pair.first)]
-                            ->locks[offset(pair.first) / region->align])) {
+        if (!acquire(pair.second.lock, readVersion)) {
             releaseLocks(*count);
             return false;
         }
@@ -152,13 +125,12 @@ bool Transaction::acquireLocks(int *count) {
 }
 
 void Transaction::releaseLocks(int count) {
-    if (!count) {
+    if (count < 1) {
         return;
     }
     for (const auto &pair : writeSet) {
-        release(&region->memory[index(pair.first)]
-                       ->locks[offset(pair.first) / region->align]);
-        if (!--count) {
+        removeLock(pair.second.lock);
+        if (--count < 1) {
             break;
         }
     }

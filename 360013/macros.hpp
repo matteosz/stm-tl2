@@ -3,33 +3,30 @@
 #include <cstdint>
 
 // Uncomment to activate debug mode
-#define _DEBUG_
+//#define _DEBUG_
 
 /* MACROS */
 
 // Virtual address translation
 #define index(x) ((((size_t) x >> 48) & 0xFFFF) - 1)
-#define offset(x) ((size_t) x & 0xFFFFFFFFFFFF)
-#define address(x) (void*) (((size_t)(x+1) << 48))
+#define offset(x) (size_t) ((size_t) x & 0xFFFFFFFFFFFF)
+#define address(x) (void*) (((size_t) (x+1) << 48))
 
 // By assuming x is an integer, if it's locked (MSB=1), then it's negative
-#define isLocked(x) (x < 0)
+//#define isLocked(x) (x < 0)
 
 // Clear MSB using a mask
-#define unlock(x) (x & 0x7FFFFFFF)
+//#define unlock(x) (x & 0x7FFFFFFF)
 // Set to 1 MSB using a mask
-#define addLock(x) (x | 0x80000000)
+//#define addLock(x) (x | 0x80000000)
 
 /* CONSTANTS */
 
 // Threshold to start freeing the transaction alloc segments
-#define BATCH 64
+#define BATCH 128
 
 // Number of preallocated segments = 2^16
 #define MAXSEGMENTS 0x10000
-
-// Mask to use in the macros
-//static constexpr uint32_t clearMask = (1U << 31) - 1U, lockMask = (1U << 31);
 
 // Requested features
 #ifndef _GNU_SOURCE

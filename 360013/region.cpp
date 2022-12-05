@@ -14,7 +14,7 @@ Segment::Segment(size_t _align, size_t _size) : size(_size) {
         throw e;
     }
     for (int i = 0; i < numLocks; i++) {
-        locks[i].store(0);
+        atomic_store(&locks[i], 0);
     }
     // Allocate the memory given the alignment
     if (unlikely(posix_memalign(&data, _align, _size))) {
@@ -39,18 +39,14 @@ Segment::~Segment() {
 
 /*----- REGION -----*/
 
-Region::Region(size_t _align, size_t _size) : 
-                                            globalClock(0), 
-                                            align(_align), 
-                                            countSegments(1) {
+Region::Region(size_t _align, size_t _size) : align(_align), countSegments(1) {
     #ifdef _DEBUG_
         cout << "TM_CREATE-> s:" << _size << " a:" << _align << "\n";
     #endif
 
     // Initialize the lock and mutex
     if (unlikely(pthread_mutex_init(&freeLock, nullptr)     || 
-                 pthread_mutex_init(&memoryLock, nullptr)   ||
-                 pthread_rwlock_init(&cleanLock, nullptr))) {
+                 pthread_mutex_init(&memoryLock, nullptr))) {
         #ifdef _DEBUG_
             cout << "Failed to allocate the mutex and locks\n";
         #endif
@@ -103,12 +99,9 @@ int Region::getCount() {
 
 Region::~Region() {
     for (int i = 0; i < MAXSEGMENTS; i++) {
-        if (memory[i]) {
-            free(memory[i]);
-        }
+        delete memory[i];
     }
     free(memory);
-    pthread_rwlock_destroy(&cleanLock);
     pthread_mutex_destroy(&memoryLock);
     pthread_mutex_destroy(&freeLock);
     #ifdef _DEBUG_
