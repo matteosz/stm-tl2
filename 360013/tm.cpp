@@ -23,7 +23,6 @@
 // Optimizations
 #pragma GCC optimize("Ofast")
 #pragma GCC target("avx,avx2,fma")
-#pragma GCC optimize("unroll-loops")
 
 // Debug flag
 //#define _DEBUG_
@@ -111,10 +110,10 @@
 #define START_ADDRESS (void*) 0x1000000000000
 
 // Number of segments preallocated
-#define IDX 512
+#define IDX 256
 
 // Number of words for each segment
-#define OFF 512
+#define OFF 1024
 
 // Heuristic about alignment
 #define ALIGN_BITS 3
@@ -283,9 +282,9 @@ size_t tm_align(shared_t unused(shared)) noexcept {
  * @return Opaque transaction ID, 'invalid_tx' on failure
 **/
 tx_t tm_begin(shared_t unused(shared), bool is_ro) noexcept {
+    transaction.readOnly = is_ro;
     // Simply sample the global version
     transaction.readVersion = atomic_load(&region.globalClock);
-    transaction.readOnly = is_ro;
     #ifdef _DEBUG_
         cout << "TM_BEGIN: rv = " << transaction.readVersion << " ro = " << is_ro << "\n";
     #endif
@@ -302,8 +301,8 @@ bool tm_end(shared_t unused(shared), tx_t unused(tx)) noexcept {
         cout << "TM_END:\n";
     #endif
 
-    // If the transaction is read only or has nothing on write set to commit
-    if (transaction.readOnly || transaction.writeSet.empty()) {  
+    // If the transaction is read only
+    if (transaction.readOnly) {  
         #ifdef _DEBUG_
             cout << "Transaction ended correctly (readonly or empty write set)\n";
         #endif
@@ -395,7 +394,7 @@ inline bool rw_read(void const* source, size_t size, void* target) {
         PRE_VALIDATE
 
         // If the version has already been locked or it's greater than rv
-        if (before == -1 || before > transaction.readVersion) {
+        if (before < 0 || before > transaction.readVersion) {
             #ifdef _DEBUG_
                 cout << "Before(" << before << ")\n";
             #endif
@@ -455,7 +454,7 @@ bool tm_read(shared_t unused(shared), tx_t unused(tx), void const* source, size_
         PRE_VALIDATE
 
         // If version lock already taken
-        if (before == -1) {
+        if (before < 0) {
             #ifdef _DEBUG_
                 cout << "Address already locked - Stopped\n";
             #endif
