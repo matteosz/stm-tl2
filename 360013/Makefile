@@ -5,7 +5,7 @@ EXT_HPP  := h hh hpp hxx h++
 EXT_C    := c
 EXT_CXX  := C cc cpp cxx c++
 
-INCLUDE_DIR := ./include/
+INCLUDE_DIR := ../include
 SOURCE_DIR  := .
 
 WILD_EXT  = $(strip $(foreach EXT,$($(1)),$(wildcard $(2)/*.$(EXT))))
@@ -19,9 +19,9 @@ OBJS     := $(SRCS_C:%=%.o) $(SRCS_CXX:%=%.o)
 CC       := $(CC)
 CCFLAGS  := -Wall -Wextra -Wfatal-errors -O2 -std=c11 -fPIC -I$(INCLUDE_DIR)
 CXX      := $(CXX)
-CXXFLAGS := -Wall -Wextra -Wfatal-errors -O2 -std=c++17 -fPIC -I$(INCLUDE_DIR)
+CXXFLAGS := -Wall -Wextra -Wfatal-errors -O3 -march=native -std=c++17 -fPIC -I$(INCLUDE_DIR)
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
-LDFLAGS  := -shared -g
+LDFLAGS  := -shared
 LDLIBS   :=
 
 .PHONY: build clean
