@@ -1,7 +1,7 @@
 /**
- * @file   tm.cpp
+ * @file    tm.cpp
  * 
- * @author Matteo Suez <matteo.suez@epfl.ch>
+ * @author  Matteo Suez <matteo.suez@epfl.ch>
  * 
  * @section DESCRIPTION
  * 
@@ -23,6 +23,7 @@
 // Optimizations
 #pragma GCC optimize("Ofast")
 #pragma GCC target("avx,avx2,fma")
+#pragma GCC optimize("unroll-loops")
 
 // Debug flag
 //#define _DEBUG_
@@ -98,13 +99,22 @@
 **/
 #define update(lock, version) atomic_store(lock, version << 1);
 
+// Handy macros
+#define ABORT clean(); return false;
+#define COMMIT clean(); return true;
+#define PRE_VALIDATE Word *word = findW(sourceWord); int before = getVersion(&word->lock);
+#define EXECUTE(x) *((uint64_t*) x + i)
+
 // Constants
 
+// Hardcoded virtual start address
+#define START_ADDRESS (void*) 0x1000000000000
+
 // Number of segments preallocated
-#define IDX 450
+#define IDX 512
 
 // Number of words for each segment
-#define OFF 1500
+#define OFF 512
 
 // Heuristic about alignment
 #define ALIGN_BITS 3
@@ -118,7 +128,6 @@
 #include <vector>
 #include <unordered_set>
 #include <map>
-#include <iostream>
 
 // Internal headers
 #include <tm.hpp>
@@ -144,7 +153,7 @@ typedef struct Word {
 } Word;
 
 /**
- * @brief Shared Memory Region (a.k.a Transactional Memory).
+ * @brief Shared memory region 
 **/
 typedef struct Region {
 
@@ -197,10 +206,6 @@ typedef struct Transaction {
 
 } Transaction;
 
-// Handy macros
-#define ABORT clean(); return false;
-#define COMMIT clean(); return true;
-
 // Utilities functions
 inline bool rw_read(void const*,size_t,void*);
 inline void clean();
@@ -247,7 +252,7 @@ void* tm_start(shared_t unused(shared)) noexcept {
     #ifdef _DEBUG_
         cout << "Region starts at address: " << virtualAddress(0) << "\n";
     #endif
-    return virtualAddress(0);
+    return START_ADDRESS;
 }
 
 /** [thread-safe] Return the size (in bytes) of the first allocated segment of the shared memory region.
@@ -278,8 +283,9 @@ size_t tm_align(shared_t unused(shared)) noexcept {
  * @return Opaque transaction ID, 'invalid_tx' on failure
 **/
 tx_t tm_begin(shared_t unused(shared), bool is_ro) noexcept {
-    transaction.readOnly = is_ro;
+    // Simply sample the global version
     transaction.readVersion = atomic_load(&region.globalClock);
+    transaction.readOnly = is_ro;
     #ifdef _DEBUG_
         cout << "TM_BEGIN: rv = " << transaction.readVersion << " ro = " << is_ro << "\n";
     #endif
@@ -325,11 +331,11 @@ bool tm_end(shared_t unused(shared), tx_t unused(tx)) noexcept {
         cout << "Write version: " << writeVersion << "\n";
     #endif
     
-    // If not the special case rv == wv - 1, then validate
+    // If not the special case rv == wv - 1, then validate the readset
     if (transaction.readVersion != writeVersion - 1) {
         for (const auto &item : transaction.readSet) {
             int version = getVersion(item);         
-            if (version == -1 || version > transaction.readVersion) {
+            if (version < 0 || version > transaction.readVersion) {
                 // Unlock everything
                 #ifdef _DEBUG_
                     cout << "Validation failed, releasing locks and aborting...\n";
@@ -371,7 +377,6 @@ inline bool rw_read(void const* source, size_t size, void* target) {
 
     for (tx_t i = 0; i < size; i += ALIGN) {
         tx_t sourceWord = (tx_t) source + i;
-        uint64_t *destWord = (uint64_t*) target + i;
 
         // Search if already present in the write set, if so just use that value
         auto search = transaction.writeSet.find(sourceWord);
@@ -379,7 +384,7 @@ inline bool rw_read(void const* source, size_t size, void* target) {
             #ifdef _DEBUG_
                 cout << "Address found on write set, just copying\n";
             #endif
-            *destWord = search->second.data;
+            EXECUTE(target) = search->second.data;
             continue;
         }
 
@@ -387,8 +392,7 @@ inline bool rw_read(void const* source, size_t size, void* target) {
             cout << "Address not found on write set, trying to sample lock...\n";
         #endif
 
-        Word *word = findW(sourceWord);
-        int before = getVersion(&word->lock);
+        PRE_VALIDATE
 
         // If the version has already been locked or it's greater than rv
         if (before == -1 || before > transaction.readVersion) {
@@ -399,7 +403,7 @@ inline bool rw_read(void const* source, size_t size, void* target) {
         }
 
         // Execute the transaction
-        *destWord = word->data;
+        EXECUTE(target) = word->data;
 
         #ifdef _DEBUG_
             cout << "Content copied in memory, trying to resample lock...\n";
@@ -408,7 +412,7 @@ inline bool rw_read(void const* source, size_t size, void* target) {
         // Sample the lock again to check if a concurrent transaction has occurred
         int after = getVersion(&word->lock);
 
-        // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
+        // If the word has been locked after, or the 2 version numbers are simply different
         if (before != after) {
             #ifdef _DEBUG_
                 cout << "Before(" << before << ") != After(" << after << ")\n";
@@ -448,8 +452,7 @@ bool tm_read(shared_t unused(shared), tx_t unused(tx), void const* source, size_
     for (tx_t i = 0; i < size; i += ALIGN) {
         tx_t sourceWord = (tx_t) source + i;
 
-        Word *word = findW(sourceWord);
-        int before = getVersion(&word->lock);
+        PRE_VALIDATE
 
         // If version lock already taken
         if (before == -1) {
@@ -459,10 +462,8 @@ bool tm_read(shared_t unused(shared), tx_t unused(tx), void const* source, size_
             ABORT
         }
 
-        uint64_t *destWord = ((uint64_t*) target + i);
-
         // Execute transaction
-        *destWord = word->data;
+        EXECUTE(target) = word->data;
 
         #ifdef _DEBUG_
             cout << "Content copied in memory, trying to resample lock...\n";
@@ -472,20 +473,12 @@ bool tm_read(shared_t unused(shared), tx_t unused(tx), void const* source, size_
         int after = getVersion(&word->lock);
 
         // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
-        if (before != after) {
+        if (before != after || after > transaction.readVersion) {
             #ifdef _DEBUG_
                 cout << "Before(" << before << ") != After(" << after << ")\n";
             #endif
             ABORT
-        } else if (after > transaction.readVersion) {
-            #ifdef _DEBUG_
-                cout << "After(" << after << ") > rv(" << transaction.readVersion << ")\n";
-            #endif
-            // In ADAPTSTM they use revalidation to speed up:
-            // Still to implement properly
-            ABORT
         }
-
     }
 
     #ifdef _DEBUG_
@@ -510,9 +503,8 @@ bool tm_write(shared_t unused(shared), tx_t unused(tx), void const* source, size
 
     for (tx_t i = 0; i < size; i += ALIGN) {
         tx_t destWord = (tx_t) target + i;
-        uint64_t *sourceWord = (uint64_t*) source + i;
         // Simply put in the write set the content of source
-        transaction.writeSet[destWord] = {*sourceWord, &findW(destWord)->lock};
+        transaction.writeSet[destWord] = {EXECUTE(source), &findW(destWord)->lock};
     }
 
     #ifdef _DEBUG_
@@ -552,29 +544,32 @@ bool tm_free(shared_t unused(shared), tx_t unused(tx), void* unused(target)) noe
     return true;
 }
 
-
 /**************************************
  *     *  UTILITIES  FUNCTIONS  *     *
  **************************************/
 
-
-/** Clean the transaction
+/** Clean the transaction by clearing
+ *  read and write sets
  */
 inline void clean() {
-    transaction.readOnly = false;
-    transaction.readVersion = 0;
     transaction.writeSet.clear();
     transaction.readSet.clear();
+    #ifdef _DEBUG_
+        cout << "Transaction cleaned\n";
+    #endif
 }
 
 /** Acquire lock
  * @param lock pointer to the version lock
- * @returns true if succeeded to lock, false if locked
+ * @returns true if succeeded to lock using CAS, false if locked or failed CAS
  */
 inline bool acquire(atomic_int *lock) {
     int version = atomic_load(lock);
     // Sampling the LSB to see if it's locked    
     if ((version & 0x1) > 0) {
+        #ifdef _DEBUG_
+            cout << "Failed to acquire, already locked\n";
+        #endif
         return false;
     }
     // Perform CAS to prevent concurrent lock acquires
@@ -587,8 +582,10 @@ inline bool acquire(atomic_int *lock) {
  */
 inline int getVersion(atomic_int *lock) {
     int version = atomic_load(lock);
-    // If it's locked return -1
     if ((version & 0x1) > 0) {
+        #ifdef _DEBUG_
+            cout << "Failed to get version, already locked\n";
+        #endif
         return -1;
     }
     return version >> 1;
