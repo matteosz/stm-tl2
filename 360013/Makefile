@@ -19,7 +19,11 @@ OBJS     := $(SRCS_C:%=%.o) $(SRCS_CXX:%=%.o)
 CC       := $(CC)
 CCFLAGS  := -Wall -Wextra -Wfatal-errors -O2 -std=c11 -fPIC -I$(INCLUDE_DIR)
 CXX      := $(CXX)
+<<<<<<< HEAD
 CXXFLAGS := -Wall -Wextra -Wfatal-errors -O3 -march=native -std=c++17 -fPIC -I$(INCLUDE_DIR)
+=======
+CXXFLAGS := -Wall -Wextra -Wfatal-errors -O3 -std=c++17 -fPIC -I$(INCLUDE_DIR)
+>>>>>>> a1f0409b67aec79f6d02df83824bb51387bd5df6
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  := -shared
 LDLIBS   :=
