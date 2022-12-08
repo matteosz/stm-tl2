@@ -6,4 +6,6 @@ sync-examples/
 *.so
 *.zip
 *.sh
-grading/grading
+grading/
+reference/
+*.py
