@@ -453,8 +453,8 @@ bool tm_read(shared_t unused(shared), tx_t unused(tx), void const* source, size_
 
         PRE_VALIDATE
 
-        // If version lock already taken
-        if (before < 0) {
+        // If version lock already taken or greater than rv
+        if (before < 0 || before > transaction.readVersion) {
             #ifdef _DEBUG_
                 cout << "Address already locked - Stopped\n";
             #endif
@@ -471,8 +471,8 @@ bool tm_read(shared_t unused(shared), tx_t unused(tx), void const* source, size_
         // Sample the lock again to check if a concurrent transaction has occurred
         int after = getVersion(&word->lock);
 
-        // If the word has been locked after, or the 2 version numbers are different (or greater than readVersion)
-        if (before != after || after > transaction.readVersion) {
+        // If the word has been locked after, or the 2 version numbers are different
+        if (before != after) {
             #ifdef _DEBUG_
                 cout << "Before(" << before << ") != After(" << after << ")\n";
             #endif
